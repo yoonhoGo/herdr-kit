@@ -1,0 +1,8 @@
+{
+  "place": "none",
+  "title": "Agent Dashboard",
+  "palette": [
+    { "title": "Agent Dashboard: 새 탭으로 열기", "command": "tab.new", "args": { "name": "Agents", "mod": "agent-dashboard" }, "words": "agents status dashboard 에이전트 현황" },
+    { "title": "Agent Dashboard: 오른쪽 패널 여닫기", "command": "agent-dashboard.toggle", "words": "agents status dashboard panel toggle 에이전트 현황 패널" }
+  ]
+}
