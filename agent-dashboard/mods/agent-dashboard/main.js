@@ -274,9 +274,8 @@ export default class Dashboard extends View {
       .child(div().text_size(11).text_color(blocked ? color : t.dim).child(time || LABEL[a.status]));
     return clicks(v_flex()
       .id(`card-${a.address}`)
+      // 열을 꽉 채운다: 유휴 항목처럼 오른쪽 끝(↗)이 열 끝에 맞게.
       .w_full()
-      // 넓은 열에서도 한 줄이 읽기 좋은 길이를 넘지 않게.
-      .max_w(480)
       .min_w(0)
       .pl(10)
       .pr(6)
