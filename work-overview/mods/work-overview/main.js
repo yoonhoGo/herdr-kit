@@ -56,7 +56,10 @@ export default class WorkOverview extends View {
         if (await nextCommand() === "toggle") this.toggle();
       }
     });
-    cx.timer.every(1500, (cx) => this.refresh(cx));
+    cx.timer.every(1500, (cx) => {
+      // Load a newly selected tab even if the window is covered; only pause polling an existing entry.
+      if (window()?.visible !== false || this.entry?.tab !== activeTab()?.id) this.refresh(cx);
+    });
   }
 
   toggle() {
@@ -69,7 +72,7 @@ export default class WorkOverview extends View {
   refresh(cx) {
     const tab = activeTab()?.id;
     const block = panel(layout());
-    if (!tab || !block || (this.role === "panel") !== !block.hidden || window()?.visible === false) return;
+    if (!tab || !block || (this.role === "panel") !== !block.hidden) return;
     if (this.request?.tab === tab) return;
     const request = { tab };
     this.request = request;
