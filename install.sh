@@ -31,6 +31,7 @@ for p in $pkgs; do
   for l in "$p"/layouts/*.json; do
     [ -f "$l" ] || continue
     dest="$home/layouts/$(basename "$l")"
+    mkdir -p "$home/layouts"
     if [ -e "$dest" ]; then echo "레이아웃은 이미 있어 건너뜀: $dest"; else cp "$l" "$dest"; echo "layout: $dest"; fi
   done
 done
