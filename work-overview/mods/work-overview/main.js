@@ -1,12 +1,16 @@
-import { View, div, svg } from "gpui-kit";
+import { Background, PathBuilder, View, div, svg } from "gpui-kit";
 import { Button, Link, h_flex, v_flex, Textarea, TextareaState } from "gpui-base";
-import { appHome, checking, focused, layout, nextCommand, notify, panes, props, readTextFile, run, spaces, theme, window, writeTextFile } from "herdr";
+import { appHome, checking, focused, layout, nextCommand, notify, panes, props, readTextFile, run, spaces, theme, window as appWindow, writeTextFile } from "herdr";
 import { BLOCKS, MEMO_KINDS, STATES, changeMemos, parseMemos, parseSnapshot, paths, visibleMemos } from "./model.mjs";
+import { referenceSite } from "./reference.mjs";
 
 const PANEL = "work-overview";
 const ICONS = "mods/workspace-chrome/";
 const activeTab = () => spaces().find((space) => space.active)?.tabs.find((tab) => tab.active) ?? null;
 const stateColors = { planned: "muted", working: "working", blocked: "blocked", done: "done" };
+const sectionIcons = { parents: "layers", subgoals: "git-branch", workflow: "git-compare",
+  milestones: "pin", memos: "file-text", references: "files", commands: "terminal" };
+const noteIcons = { progress: "check", decision: "pin", next: "chevron-right", note: "square-pen" };
 
 function panel(node) {
   if (node?.id === PANEL) return node;
@@ -18,29 +22,71 @@ function panel(node) {
 }
 
 const icon = (name, color) => svg(`${ICONS}${name}.svg`).size(14).flex_none().text_color(color);
+const siteIcon = (name, color) => svg(`mods/work-overview/icons/${name}.svg`).size(15).flex_none().text_color(color);
+function wash(color, opacity) {
+  let hex = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(color)?.[1];
+  if (!hex) return "#00000000";
+  if (hex.length === 3) hex = Array.from(hex, (c) => c + c).join("");
+  const base = hex.length === 8 ? parseInt(hex.slice(6), 16) : 255;
+  return `#${hex.slice(0, 6)}${Math.round(base * opacity).toString(16).padStart(2, "0")}`;
+}
+
+function glow(t) {
+  const rect = PathBuilder.fill().move_to("0%", "0%").line_to("100%", "0%")
+    .line_to("100%", "100%").line_to("0%", "100%").close().build();
+  return window.paint_path(rect, Background.linear_gradient(140, wash(t.accent, 0.17), wash(t.accent, 0)))
+    .absolute().top(0).left(0).size_full();
+}
 const label = (t, text) => div().text_size(11).font_semibold().text_color(t.muted).child(text);
 const line = (text) => div().min_w(0).text_ellipsis().child(text);
 const paragraph = (text) => v_flex().min_w(0).children(text.split("\n").map((row) =>
   div().min_w(0).whitespace_normal().child(row || "\u00a0")));
-const button = (t, id, title, action) => Button.new(id).flex_none().px(8).py(4).rounded(5)
-  .text_size(11).font_medium().text_color(t.accent).cursor_pointer().hover((s) => s.bg(t.hover))
-  .child(title).on_click(action);
-const card = (t) => v_flex().min_w(0).gap(8).p(12).rounded(8).border_1().border_color(t.border);
+const actionStyle = (el, t) => el.cursor_pointer().hover((s) => s.bg(t.hover)).active((s) => s.bg(t.selected));
+const button = (t, id, title, action) => actionStyle(Button.new(id).flex_none().h(26).px(8).gap(5).rounded(6), t)
+  .text_size(11).font_medium().text_color(t.accent).child(title).on_click(action);
+const card = (t) => v_flex().min_w(0).gap(9).p(12).rounded(10).bg(wash(t.foreground, 0.025)).border_1().border_color(t.border);
+const tile = (t, contents, color = t.accent) => h_flex().size(28).flex_none().items_center().justify_center()
+  .rounded(7).bg(wash(color, 0.12)).child(contents);
+const dot = (color, size = 6) => div().size(size).flex_none().rounded(size).bg(color);
 const tint = (t, status) => t[stateColors[status]] ?? t.muted;
 
-function status(t, state) {
-  return div().flex_none().text_size(11).text_color(tint(t, state)).child(STATES[state]);
+function status(t, state, compact = false) {
+  const color = tint(t, state);
+  const badge = h_flex().flex_none().items_center().gap(5).text_size(11).font_medium().text_color(color)
+    .child(dot(color, 5)).child(STATES[state]);
+  return compact ? badge : badge.px(7).h(20).rounded(10).bg(wash(color, 0.12));
+}
+
+function section(t, kind, count) {
+  return card(t).child(h_flex().items_center().gap(8)
+    .child(tile(t, icon(sectionIcons[kind], t.accent)))
+    .child(div().flex_1().font_semibold().child(BLOCKS[kind]))
+    .child(label(t, String(count)).flex_none().px(6).py(2).rounded(5).bg(wash(t.foreground, 0.06))));
+}
+
+function progress(t, steps, compact = false) {
+  const done = steps.reduce((count, step) => count + (step.status === "done" ? 1 : 0), 0);
+  const color = done === steps.length ? t.done : steps.some((step) => step.status === "blocked") ? t.blocked : t.accent;
+  const track = div().h(compact ? 3 : 4).rounded(3).overflow_hidden().bg(wash(t.foreground, 0.11))
+    .child(div().id("workflow-progress-fill").h_full().w(`${done / steps.length * 100}%`).rounded(3).bg(color).transition("width", 180));
+  if (compact) {
+    return h_flex().flex_none().gap(5).items_center().child(track.w(22)).child(label(t, `${done}/${steps.length}`));
+  }
+  return h_flex().gap(9).items_center().child(track.flex_1()).child(label(t, `${done}/${steps.length} 완료`).flex_none());
 }
 
 function goalRow(t, item, index) {
-  const row = h_flex().min_w(0).items_center().gap(8);
-  if (index !== undefined) row.child(label(t, String(index + 1)).flex_none());
-  row.child(paragraph(item.title).flex_1().font_medium());
-  if (item.status) row.child(status(t, item.status));
-  const body = v_flex().min_w(0).gap(3).child(row);
+  const color = item.status ? tint(t, item.status) : t.muted;
+  const marker = index === undefined ? dot(color, 5) : h_flex().size(19).flex_none().items_center().justify_center()
+    .rounded(6).bg(wash(color, 0.12)).text_color(color).text_size(10).font_semibold().child(String(index + 1));
+  const row = h_flex().min_w(0).items_center().gap(8)
+    .child(paragraph(item.title).flex_1().font_medium());
+  if (item.status) row.child(status(t, item.status, true));
+  const body = v_flex().min_w(0).flex_1().gap(4).child(row);
   if (item.due) body.child(label(t, `기한 ${item.due}`));
   if (item.description) body.child(paragraph(item.description).text_color(t.muted).text_size(12));
-  return body;
+  const bullet = h_flex().w(19).h(19).flex_none().justify_center().items_center().child(marker);
+  return h_flex().items_start().gap(8).px(4).py(5).child(bullet).child(body);
 }
 
 export default class WorkOverview extends View {
@@ -58,7 +104,7 @@ export default class WorkOverview extends View {
     });
     cx.timer.every(1500, (cx) => {
       // Load a newly selected tab even if the window is covered; only pause polling an existing entry.
-      if (window()?.visible !== false || this.entry?.tab !== activeTab()?.id) this.refresh(cx);
+      if (appWindow()?.visible !== false || this.entry?.tab !== activeTab()?.id) this.refresh(cx);
     });
   }
 
@@ -111,6 +157,7 @@ export default class WorkOverview extends View {
     }
     this.clearDraft();
     const input = TextareaState.new({ placeholder: "진척, 결정 사항, 다음 할 일…", rows: 3 });
+    input.on("change", (_e, cx) => cx.notify());
     this.draft = { tab: entry.tab, goal: entry.snapshot.goal.id, input };
     input.focus();
     cx.notify();
@@ -165,53 +212,71 @@ export default class WorkOverview extends View {
     const snapshot = entry?.snapshot;
     const steps = snapshot?.blocks.find((block) => block.type === "workflow")?.items ?? [];
     const goal = snapshot?.goal;
-    const row = Button.new("open-work-overview").h_flex().size_full().min_w(0).px(10).gap(8).items_center()
-      .text_size(11).hover((s) => s.bg(t.hover)).cursor_pointer().on_click(() => this.toggle())
-      .accessibility_label(goal ? `업무 패널 열기: ${goal.title}` : "업무 패널 열기")
-      .child(icon("panel-right", t.accent)).child(line(goal?.title ?? (entry?.error ? "업무 현황 읽기 실패" : "업무 현황")).flex_1());
-    if (goal?.status) row.child(status(t, goal.status));
-    if (steps.length) row.child(label(t, `${steps.filter((step) => step.status === "done").length}/${steps.length}`).flex_none());
+    const title = goal?.title ?? (entry?.error ? "업무 현황 읽기 실패" : "업무 현황");
+    const row = actionStyle(Button.new("open-work-overview").h_flex().size_full().min_w(0).px(10).gap(8).items_center(), t)
+      .text_size(11).on_click(() => this.toggle()).tooltip(title)
+      .accessibility_label(`업무 패널 열기: ${title}`)
+      .child(icon("panel-right", t.accent)).child(line(title).font_semibold().flex_1());
+    if (goal?.status) row.child(status(t, goal.status, true));
+    if (steps.length) row.child(progress(t, steps, true));
     if (goal?.due) row.child(label(t, goal.due).flex_none());
-    else if (!goal && tab) row.child(label(t, entry ? "발행 없음" : "…").flex_none());
+    else if (!goal && tab && !entry) row.child(icon("spinner", t.accent).spin(900));
+    row.child(icon("chevron-right", t.muted));
     return row;
   }
 
-  renderMemo(t, entry, notes, draft) {
-    const section = card(t).child(label(t, BLOCKS.memos));
-    if (!notes.length && !draft) section.child(div().text_size(12).text_color(t.muted).child("남긴 메모가 없습니다."));
+  renderMemo(t, entry, notes) {
+    const list = section(t, "memos", notes.length);
+    if (!notes.length) list.child(div().text_size(12).text_color(t.muted).child("남긴 메모가 없습니다."));
     for (const note of notes) {
-      section.child(v_flex().gap(3)
-        .child(h_flex().items_center().justify_between()
-          .child(label(t, `${MEMO_KINDS[note.kind]} · ${note.source === "local" ? "내 메모" : "에이전트"}`))
-          .child(button(t, `delete-${note.source}-${note.id}`, "삭제", (_e, cx) => this.saveMemo(cx, entry, { remove: note }))))
+      list.child(v_flex().gap(4).px(8).py(5).rounded(7).bg(wash(t.foreground, 0.045))
+        .child(h_flex().items_center().gap(6)
+          .child(icon(noteIcons[note.kind], t.accent))
+          .child(label(t, `${MEMO_KINDS[note.kind]} · ${note.source === "local" ? "나" : "에이전트"}`).flex_1())
+          .child(button(t, `delete-${note.source}-${note.id}`, "삭제", (_e, cx) => this.saveMemo(cx, entry, { remove: note }))
+            .text_color(t.muted).disabled(Boolean(this.saving))))
         .child(paragraph(note.body).text_size(12)));
     }
-    if (draft) {
-      section.child(Textarea.new(draft.input).w_full().px(8).py(5).border_1().border_color(t.border).rounded(5).text_color(t.foreground))
-        .child(h_flex().gap(6)
-          .child(button(t, "save-work-memo", this.saving ? "저장 중…" : "저장", (_e, cx) => this.saveMemo(cx, entry, { add: {
-            id: `user-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
-            kind: "note", body: draft.input.value(),
-          } })))
-          .child(button(t, "cancel-work-memo", "취소", (_e, cx) => { this.clearDraft(); cx.notify(); })));
-    }
-    return section;
+    return list;
+  }
+
+  renderComposer(t, entry, draft) {
+    const busy = Boolean(this.saving);
+    return card(t).border_color(t.accent)
+      .child(div().font_semibold().child("새 메모"))
+      .child(Textarea.new(draft.input).w_full().px(8).py(5).border_1().border_color(t.border).rounded(6).text_color(t.foreground))
+      .child(h_flex().justify_end().gap(6)
+        .child(button(t, "cancel-work-memo", "취소", (_e, cx) => { this.clearDraft(); cx.notify(); }).text_color(t.muted).disabled(busy))
+        .child(button(t, "save-work-memo", busy ? "저장 중…" : "저장", (_e, cx) => this.saveMemo(cx, entry, { add: {
+          id: `user-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
+          kind: "note", body: draft.input.value(),
+        } })).bg(wash(t.accent, 0.13)).disabled(busy || !draft.input.value().trim())));
   }
 
   renderBlock(t, block, entry) {
-    const cardBody = card(t).child(label(t, BLOCKS[block.type]));
+    const cardBody = section(t, block.type, block.items.length);
+    if (block.type === "workflow") cardBody.child(progress(t, block.items));
     for (const [i, item] of block.items.entries()) {
       if (block.type === "references") {
-        cardBody.child(Link.new(`reference-${i}`).href(item.url).v_flex().min_w(0).gap(2).cursor_pointer().text_color(t.accent)
-          .hover((s) => s.bg(t.hover))
-          .child(paragraph(item.kind ? `${item.title} · ${item.kind}` : item.title).font_medium())
-          .child(line(item.url).text_color(t.muted).text_size(11)));
+        const site = referenceSite(item.url);
+        const color = site.icon === "github" ? t.foreground : t.accent;
+        cardBody.child(actionStyle(Link.new(`reference-${i}`).href(item.url).h_flex().items_center()
+          .min_w(0).gap(9).px(6).py(5).rounded(7), t).tooltip(item.url)
+          .child(tile(t, siteIcon(site.icon, color), color))
+          .child(v_flex().flex_1().min_w(0).gap(2)
+            .child(line(item.title).font_medium().text_color(t.foreground))
+            .child(line(item.kind ? `${site.host} · ${item.kind}` : site.host).text_size(11).text_color(t.muted)))
+          .child(siteIcon("external", t.muted)));
       } else if (block.type === "commands") {
-        cardBody.child(Button.new(`run-${i}`).v_flex().min_w(0).gap(4).p(8).rounded(5).bg(t.raised)
-          .cursor_pointer().hover((s) => s.bg(t.hover)).on_click(() => this.split(entry, item))
-          .child(h_flex().gap(6).items_center().child(icon("terminal", t.accent))
-            .child(paragraph(item.title).flex_1().font_medium()).child(label(t, item.direction === "right" ? "오른쪽 분할" : "아래 분할").flex_none()))
-          .child(paragraph(item.argv.map((arg) => /^[\w./:@=+-]+$/.test(arg) ? arg : JSON.stringify(arg)).join(" ")).text_color(t.muted).text_size(11)));
+        const argv = item.argv.map((arg) => /^[\w./:@=+-]+$/.test(arg) ? arg : JSON.stringify(arg)).join(" ");
+        cardBody.child(actionStyle(Button.new(`run-${i}`).v_flex().items_start().min_w(0).gap(7).p(8).rounded(8)
+          .bg(wash(t.foreground, 0.045)).border_1().border_color(t.border), t)
+          .on_click(() => this.split(entry, item))
+          .child(h_flex().w_full().gap(7).items_center().child(tile(t, icon("terminal", t.accent)))
+            .child(paragraph(item.title).flex_1().font_medium())
+            .child(label(t, item.direction === "right" ? "오른쪽 분할" : "아래 분할").flex_none()))
+          .child(div().w_full().px(7).py(5).rounded(5).bg(wash(t.foreground, 0.06))
+            .child(paragraph(argv).text_color(t.muted).text_size(11))));
       } else cardBody.child(goalRow(t, item, block.type === "workflow" ? i : undefined));
     }
     return cardBody;
@@ -224,27 +289,40 @@ export default class WorkOverview extends View {
     if (!checking() && tab && !entry) this.refresh(cx);
     if (this.role === "status") return this.renderStrip(t, tab, entry);
 
-    const title = h_flex().flex_none().px(14).h(44).gap(8).items_center().border_b(1).border_color(t.border)
-      .child(icon("panel-right", t.accent)).child(div().font_semibold().flex_1().child("업무 현황"))
-      .child(button(t, "close-work-overview", "접기", () => this.toggle()));
+    const title = h_flex().flex_none().px(14).h(48).gap(8).items_center().border_b(1).border_color(t.border)
+      .child(tile(t, icon("panel-right", t.accent))).child(div().font_semibold().flex_1().child("업무 현황"))
+      .child(button(t, "close-work-overview", "접기", () => this.toggle()).child(icon("chevron-right", t.accent)));
     const body = v_flex().gap(10).p(12);
     if (entry?.snapshot) {
       const { goal, blocks } = entry.snapshot;
       const draft = this.draft?.tab === tab.id && this.draft.goal === goal.id ? this.draft : null;
       const notes = visibleMemos(entry.snapshot, entry.memos);
-      body.child(card(t)
-        .child(h_flex().items_center().justify_between().child(label(t, "현재 목표"))
-          .child(button(t, "add-work-memo", "메모 추가", (_e, cx) => this.beginMemo(cx, entry))))
-        .child(goalRow(t, goal).text_size(15)));
+      const hero = card(t).p(14).relative().overflow_hidden().child(glow(t))
+        .child(h_flex().items_center().justify_between().child(label(t, "현재 목표").text_color(t.accent))
+          .child(button(t, "add-work-memo", "메모 추가", (_e, cx) => this.beginMemo(cx, entry))
+            .bg(wash(t.accent, 0.1)).child(icon("plus", t.accent))))
+        .child(paragraph(goal.title).font_semibold().text_size(19));
+      if (goal.description) hero.child(paragraph(goal.description).text_color(t.muted).text_size(12));
+      if (goal.status || goal.due) {
+        const meta = h_flex().gap(9).items_center();
+        if (goal.status) meta.child(status(t, goal.status));
+        if (goal.due) meta.child(h_flex().gap(5).items_center().child(icon("clock", t.muted)).child(label(t, `기한 ${goal.due}`)));
+        hero.child(meta);
+      }
+      body.child(hero);
+      if (draft) body.child(this.renderComposer(t, entry, draft));
       for (const block of blocks) {
-        if (block.type === "memos") body.child(this.renderMemo(t, entry, notes, draft));
+        if (block.type === "memos") body.child(this.renderMemo(t, entry, notes));
         else if (block.items.length) body.child(this.renderBlock(t, block, entry));
       }
-      if (!blocks.some((block) => block.type === "memos") && (notes.length || draft)) body.child(this.renderMemo(t, entry, notes, draft));
+      if (notes.length && !blocks.some((block) => block.type === "memos")) body.child(this.renderMemo(t, entry, notes));
     } else {
-      body.child(card(t)
+      const loading = tab && !entry;
+      const emblem = icon(loading ? "spinner" : "layers", entry?.error ? t.blocked : t.accent);
+      body.child(card(t).p(16)
+        .child(tile(t, loading ? emblem.spin(900) : emblem))
         .child(div().font_semibold().child(entry?.error ? "업무 현황을 읽을 수 없습니다" : !tab ? "선택한 탭이 없습니다" : entry ? "발행된 목표가 없습니다" : "업무 현황을 읽는 중…"))
-        .child(paragraph(entry?.error ?? (entry ? "이 탭의 에이전트에게 현재 업무를 발행해 달라고 요청하세요." : "")).text_size(12).text_color(t.muted)));
+        .child(paragraph(entry?.error ?? (entry ? "이 탭의 에이전트에게 현재 업무 발행을 요청하세요." : "")).text_size(12).text_color(t.muted)));
     }
     return v_flex().size_full().min_w(0).text_color(t.foreground).text_size(13)
       .child(title).child(div().id(`work-scroll-${tab?.id ?? "empty"}`).flex_1().min_h(0).overflow_y_scrollbar().child(body));

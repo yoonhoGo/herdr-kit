@@ -6,7 +6,7 @@ export const MEMO_KINDS = Object.freeze({
 });
 export const BLOCKS = Object.freeze({
   parents: "상위 목표", subgoals: "하위 목표", workflow: "워크플로",
-  milestones: "마일스톤", memos: "복귀 메모", references: "참조 링크", commands: "제안 커맨드",
+  milestones: "마일스톤", memos: "메모", references: "참조 링크", commands: "제안 커맨드",
 });
 
 const MAX_BYTES = 128 * 1024;
