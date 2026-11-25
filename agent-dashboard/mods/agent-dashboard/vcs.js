@@ -19,8 +19,11 @@ elif top=$(git rev-parse --show-toplevel 2>/dev/null); then
   echo "work=$(git branch --show-current 2>/dev/null)"
   [ "$(git rev-parse --path-format=absolute --git-dir)" != "$common" ] && echo "tree=$(basename "$top")"
   echo "change=$(git rev-parse --short HEAD 2>/dev/null)"
-  # 저절로 도는 probe라 저장소 설정의 fsmonitor 명령을 실행하지 않게 끈다.
-  [ -n "$(git -c core.fsmonitor=false status --porcelain 2>/dev/null | head -1)" ] && echo dirty=1
+  # 저절로 도는 probe라 저장소 설정이 정한 명령(fsmonitor, clean/process filter)을 실행하지 않게,
+  # git status 대신 내용을 읽지 않는 두 명령으로 본다: diff-index는 색인의 stat만 비교하고(filter 없음),
+  # ls-files는 추적하지 않는 파일만 찾는다. 색인도 고쳐 쓰지 않는다(--no-optional-locks).
+  g() { git -c core.fsmonitor=false --no-optional-locks "$@" 2>/dev/null; }
+  [ -n "$(g diff-index --name-only HEAD -- | head -1)$(g ls-files --others --exclude-standard | head -1)" ] && echo dirty=1
 fi
 exit 0
 `;

@@ -28,7 +28,7 @@
 - **필터**: 검색어 낱말을 모두 담아야 맞는다(대소문자 무시). 레인 필드(스페이스 이름·저장소·브랜치·워크트리·기본 브랜치·변경 ID·폴더·머신)와 에이전트 필드(제목·탭·프로그램·앱·주소)를 함께 본다. Esc나 ✕로 지운다. 상태 칩은 켜고 끄며 마지막 하나는 끌 수 없다. 상태·머신 선택은 `localStorage`에 남는다.
 - **범위(패널·상태 줄)**: 지금 보고 있는 스페이스(`spaces().find(s => s.active)`)의 묶음 열쇠(저장소, 아니면 경로)와 같은 레인만. 범위 칩의 ✕로 끄고 "현재 저장소만"으로 켠다(`shared("agent-dashboard.scoped")`, 패널과 상태 줄이 같이 씀). 범위가 걸리면 묶음 머리를 그리지 않고 vcs와 기본 브랜치를 요약 앞에 붙인다.
 - **여닫기**: `agent-dashboard.toggle`(팔레트, 패널의 접기 버튼, 상태 줄 칸 클릭)이 패널(`agent-dashboard`)과 상태 줄 칸(`agent-dashboard-status`) 중 하나만 보이게 맞바꾼다. 패널이 다른 길로 열려 둘 다 보이면 상태 줄 칸을 숨긴다. 탭 복사본은 이 명령을 받지 않는다.
-- **저장소 정보**: 스페이스의 첫 터미널이 지금 있는 폴더에서 sh 스크립트를 한 번 돌린다(원격이면 그 머신에서). jj가 깔려 있고 jj 저장소면 jj(`trunk()`, 가장 가까운 bookmark, workspace, 변경 ID, 비었는지), 아니면 git(`origin/HEAD`, 현재 브랜치, linked worktree, 짧은 해시, `status --porcelain`). 1분마다(창이 보일 때만) 다시 묻고, 끝나는 대로 하나씩 그리며, 10초 넘게 답이 없으면 다시 묻는다.
+- **저장소 정보**: 스페이스의 첫 터미널이 지금 있는 폴더에서 sh 스크립트를 한 번 돌린다(원격이면 그 머신에서). jj가 깔려 있고 jj 저장소면 jj(`trunk()`, 가장 가까운 bookmark, workspace, 변경 ID, 비었는지), 아니면 git(`origin/HEAD`, 현재 브랜치, linked worktree, 짧은 해시, 변경 여부는 `diff-index --name-only HEAD`와 `ls-files --others --exclude-standard`). 1분마다(창이 보일 때만) 다시 묻고, 끝나는 대로 하나씩 그리며, 10초 넘게 답이 없으면 다시 묻는다.
 - **폭**: `on_size_change`의 창 px를 줌으로 나눈 디자인 폭이 1000px 미만이면 여백·왼쪽 머리·빈 열을 줄이고, 760px 미만이면 쌓는 형태로 바꾼다.
 - **데모**: props `{ demo: true }`로 열면 `demo.js`의 가짜 스페이스·에이전트를 그린다(저장소 조회와 Dock 배지는 건드리지 않음).
 
@@ -56,7 +56,7 @@
 - `cx`는 그 작업 본문에서만 쓴다. `Promise.all` 안쪽 콜백에서 `cx.notify()`를 부르면 작업이 끊긴다(`Promise.race`로 하나씩 받는다).
 - 숨은 복사본이 시작한 조회는 버려질 수 있다. "묻는 중" 표시를 영원히 믿지 말고 시간이 지나면 다시 묻는다.
 - 저장할 때마다 다시 불러오므로 설치할 때 `main.js`를 마지막에 복사한다(새 `main.js`가 옛 `lib.js`를 읽지 않게).
-- 주기적인 조회라 jj는 `--ignore-working-copy`(스냅숏·op log를 남기지 않게), git은 `-c core.fsmonitor=false`(저장소 설정의 명령을 실행하지 않게).
+- 주기적인 조회라 jj는 `--ignore-working-copy`(스냅숏·op log를 남기지 않게). git은 `status`를 쓰지 않는다: 저장소 설정의 fsmonitor·clean/process filter 명령이 실행된다. 내용을 읽지 않는 `diff-index`(색인의 stat만 비교)와 `ls-files --others`를 `-c core.fsmonitor=false --no-optional-locks`로 쓴다. 내용은 같고 stat만 바뀐 파일은 git이 색인을 새로 고칠 때까지 '변경'으로 보인다.
 - 테마 색이 `#rrggbbaa`일 수 있다(herdr-glass). 뒤에 두 자리를 붙이지 말고 `alpha()`로 곱한다.
 - 반투명 블록 뒤에 그림자(`shadow`)를 두면 비쳐서 어둡고 불투명해 보인다. 패널 블록은 탭 창과 같은 배경에 그림자 없이.
 - 탭 이름이 제목을 되풀이하면("3 · agent › <제목>") 숨긴다. pi는 제목 앞에 "π > "를 붙인다.
