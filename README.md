@@ -49,3 +49,7 @@ node agent-dashboard/check.mjs          # 제목·시간·검색·레인 묶음�
 ```
 
 미리보기는 실제 데이터 대신 가짜 데이터로 찍는다: `herdr-app do tab.new '{"mod":"agent-dashboard","props":{"demo":true}}'`.
+
+## 라이선스
+
+[MIT](LICENSE). kommand는 [herdr-bar](https://github.com/jeffarese/herdr-bar)(Jeff Arese, MIT)를 따라 herdr-app mod로 새로 만들었다.
