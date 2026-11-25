@@ -1,4 +1,5 @@
-// 하나의 팔레트: 이동(탭·에이전트), 앱 명령, mod 열기와 mod 기능을 한 목록에서 찾는다.
+// Kommand — 하나의 팔레트: 이동(탭·에이전트), 앱 명령, mod 열기와 mod 기능을 한 목록에서 찾는다.
+// herdr TUI 플러그인 herdr-bar(github.com/jeffarese/herdr-bar, MIT)를 따라 herdr-app mod로 새로 만들었다.
 // 기본 팔레트(frame/palette)에 picker의 장소와 mods/*/mod.json을 더했다.
 // mod는 mod.json에 "overlay"가 있으면 "Open <title>"로 나오고, 자기 기능은
 //   "palette": [{ "title": "jj: Graph", "props": { "run": "graph" } }]   // 그 props로 mod를 연다
@@ -143,7 +144,7 @@ async function readMods() {
   const dir = `${appHome()}/mods`;
   const out = [];
   for (const name of (await fs.readdir(dir)).sort()) {
-    if (name === "bar") continue;
+    if (name === "kommand") continue;
     let m;
     try { m = JSON.parse(await fs.readFile(`${dir}/${name}/mod.json`, "utf8")); } catch { continue; }
     const label = m.title ?? name;
@@ -250,7 +251,7 @@ export default class Palette extends View {
     this.handle = cx.focus_handle();
     this.mods = [];
     cx.spawn(async (cx) => {
-      try { this.mods = await readMods(); } catch (e) { console.log(`bar: ${e}`); }
+      try { this.mods = await readMods(); } catch (e) { console.log(`kommand: ${e}`); }
       cx.notify();
     });
   }
