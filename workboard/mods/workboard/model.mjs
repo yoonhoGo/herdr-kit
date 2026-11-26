@@ -90,6 +90,10 @@ function command(value, path) {
 const itemParsers = { text: goal, step: goal, memo, link: reference, command };
 const sectionTypes = { goal: true, list: true, progress: true };
 
+const scopes = { space: true, tab: true, session: true };
+export const scopeOrder = Object.keys(scopes);
+const scopeAt = (value, path, fallback) => value === undefined ? fallback : choice(value, path, scopes);
+
 function legacySections(blocks) {
   const sections = unique(list(blocks, "blocks", (value, path) => {
     const block = record(value, path);
@@ -102,13 +106,15 @@ function legacySections(blocks) {
   return [{ id: "current-goal", type: "goal" }, ...sections];
 }
 
-function parseSection(value, path) {
+function parseSection(value, path, scoped) {
   const input = record(value, path);
   const type = choice(input.type, `${path}.type`, sectionTypes);
   const key = id(input.id, `${path}.id`);
+  if (!scoped && input.scope !== undefined) fail(`${path}.scope`, "version 3에서만 사용할 수 있습니다");
+  const scope = scoped ? scopeAt(input.scope, `${path}.scope`, "tab") : undefined;
   if (type === "goal") {
     if (input.items !== undefined || input.localMemos !== undefined) fail(path, "goal은 최상위 목표 데이터를 표시합니다");
-    return { id: key, type, ...(input.title === undefined ? {} : { title: text(input.title, `${path}.title`, 160) }) };
+    return { id: key, type, ...(scope && { scope }), ...(input.title === undefined ? {} : { title: text(input.title, `${path}.title`, 160) }) };
   }
   if (input.localMemos !== undefined && (type !== "list" || typeof input.localMemos !== "boolean")) {
     fail(`${path}.localMemos`, "list에서만 참/거짓을 지정할 수 있습니다");
@@ -117,31 +123,45 @@ function parseSection(value, path) {
   const items = list(input.items, `${path}.items`, (value, at) => {
     const item = record(value, at);
     const kind = choice(item.type, `${at}.type`, itemParsers);
+    if (!scoped && item.scope !== undefined) fail(`${at}.scope`, "version 3에서만 사용할 수 있습니다");
     if (type === "progress" && kind !== "text" && kind !== "step") {
       fail(`${at}.type`, "progress는 text 또는 step만 받습니다");
     }
-    return { type: kind, ...itemParsers[kind](item, at) };
+    const metadata = scoped ? {
+      scope: scopeAt(item.scope, `${at}.scope`, scope),
+      ...(item.id !== undefined && { id: id(item.id, `${at}.id`) }),
+    } : {};
+    return { type: kind, ...itemParsers[kind](item, at), ...metadata };
   });
-  return { id: key, title, type, ...(input.localMemos ? { localMemos: true } : {}), items };
+  if (scoped) unique(items.filter((item) => item.id), `${path}.items`, (item) => item.id);
+  return { id: key, title, type, ...(scope && { scope }), ...(input.localMemos ? { localMemos: true } : {}), items };
 }
 
 function publishedMemos(sections) {
   return sections.flatMap((section) => section.items?.filter((item) => item.type === "memo") ?? []);
 }
 
-export function parseSnapshot(raw) {
+export function parseSnapshot(raw, { partial = false } = {}) {
   // Herdr reads at most 1 MiB; keep documents below it even at 4 bytes per character.
   if (raw.length > MAX_BYTES) fail("snapshot", "문서가 너무 큽니다");
   const value = record(JSON.parse(raw), "snapshot");
-  if (value.version !== 1 && value.version !== 2) fail("version", "지원하는 버전은 1 또는 2입니다");
-  const current = goal(value.goal, "goal");
-  current.id = id(value.goal.id, "goal.id");
+  const scoped = value.version === 3;
+  if (!scoped && value.version !== 1 && value.version !== 2) fail("version", "지원하는 버전은 1, 2 또는 3입니다");
+  if (!scoped && value.replaceScopes !== undefined) fail("replaceScopes", "version 3에서만 사용할 수 있습니다");
+  const current = scoped && partial && value.goal === null ? null : goal(value.goal, "goal");
+  if (current) current.id = id(value.goal.id, "goal.id");
   const sections = value.version === 1 ? legacySections(value.blocks)
-    : unique(list(value.sections, "sections", parseSection, 20), "sections", (section) => section.id);
-  if (sections.filter((section) => section.type === "goal").length !== 1) fail("sections", "goal 섹션은 하나만 필요합니다");
+    : unique(list(value.sections, "sections", (section, path) => parseSection(section, path, scoped), 20), "sections", (section) => section.id);
+  if (sections.filter((section) => section.type === "goal").length !== Number(Boolean(current))) {
+    fail("sections", current ? "goal 섹션은 하나만 필요합니다" : "목표 데이터 없는 goal 섹션은 사용할 수 없습니다");
+  }
   if (sections.filter((section) => section.localMemos).length > 1) fail("sections", "localMemos는 한 섹션에만 지정할 수 있습니다");
   unique(publishedMemos(sections), "memos", (item) => item.id);
-  return { version: 2, goal: current, sections };
+  if (!scoped) return { version: 2, goal: current, sections };
+  const replaceScopes = value.replaceScopes === undefined ? []
+    : unique(list(value.replaceScopes, "replaceScopes", (scope, path) => choice(scope, path, scopes), scopeOrder.length),
+      "replaceScopes", (scope) => scope);
+  return { version: 3, goal: current, sections, ...(replaceScopes.length && { replaceScopes }) };
 }
 
 export const configPath = (home) => `${home}/data/workboard/config.json`;
@@ -163,9 +183,9 @@ export function targetFor(sharedSpaces, { space, tab }) {
 }
 
 export function paths(home, { scope, id }) {
-  const directory = scope === "space" ? "workboard/spaces" : "workboard";
+  const directory = scope === "tab" ? "workboard" : `workboard/${scope}s`;
   const base = `${home}/data/${directory}/${encodeURIComponent(herdrId(id, scope))}`;
-  return { snapshot: `${base}.snapshot.json`, memos: `${base}.memos.json` };
+  return { snapshot: `${base}.snapshot.json`, scoped: `${base}.scoped.json`, memos: `${base}.memos.json` };
 }
 
 export function parseMemos(raw) {
@@ -180,7 +200,7 @@ export function parseMemos(raw) {
 }
 
 export function visibleMemos(snapshot, memos) {
-  const local = memos.find((entry) => entry.goal === snapshot.goal.id);
+  const local = memos.find((entry) => entry.goal === snapshot.goal?.id);
   const published = publishedMemos(snapshot.sections);
   return [
     ...published.filter((note) => !local?.hidden.includes(note.id)).map((note) => ({ ...note, source: "agent" })),
@@ -204,7 +224,7 @@ export function changeMemos(raw, goalId, action) {
 export function locationForTerminal(state, terminal) {
   const matches = (state.spaces ?? []).flatMap((space) => (space.tabs ?? [])
     .filter((tab) => (tab.terminals ?? []).some((pane) => pane.terminal === terminal))
-    .map((tab) => ({ space: space.id, tab: tab.id })));
-  if (matches.length !== 1) fail("tab", "에이전트 터미널이 속한 탭을 찾지 못했습니다. --tab 또는 --space로 지정하세요");
+    .map((tab) => ({ space: space.id, tab: tab.id, session: terminal })));
+  if (matches.length !== 1) fail("tab", "에이전트 터미널이 속한 탭을 찾지 못했습니다. --tab, --space 또는 --session을 지정하세요");
   return matches[0];
 }

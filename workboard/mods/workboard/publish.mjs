@@ -3,11 +3,13 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { configPath, locationForTerminal, parseMemos, parseSharedSpaces, parseSnapshot, paths, targetFor, visibleMemos } from "./model.mjs";
+import { configPath, locationForTerminal, parseSharedSpaces, parseSnapshot, paths, scopeOrder, targetFor, visibleMemos } from "./model.mjs";
+import { projectSnapshot, readBoard } from "./scopes.mjs";
 
-const usage = "node publish.mjs [--tab HERDR_TAB_ID | --space HERDR_SPACE_ID] show | publish [JSON_FILE|-]";
+const usage = "node publish.mjs [--tab ID | --space ID | --session ADDRESS] show | publish [JSON_FILE|-]";
 const args = process.argv.slice(2);
-const selector = args[0] === "--tab" || args[0] === "--space" ? args.shift().slice(2) : null;
+const selector = scopeOrder.find((scope) => args[0] === `--${scope}`);
+if (selector) args.shift();
 const explicitId = selector ? args.shift() : null;
 const [action, input, ...extra] = args;
 
@@ -22,6 +24,18 @@ async function readStdin() {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+async function writeSnapshot(path, raw) {
+  const temp = join(dirname(path), `.${randomUUID()}.tmp`);
+  await mkdir(dirname(temp), { recursive: true, mode: 0o700 });
+  try {
+    await writeFile(temp, raw, { flag: "wx", mode: 0o600 });
+    await rename(temp, path);
+  } catch (error) {
+    await unlink(temp).catch(() => {});
+    throw error;
+  }
+}
+
 try {
   if (action === "--help" || action === "-h") {
     console.log(usage);
@@ -31,38 +45,40 @@ try {
     }
     const home = process.env.HERDR_APP_HOME || join(homedir(), ".config", "herdr-app");
     const sharedSpaces = parseSharedSpaces(await readOptional(configPath(home)));
-    let target;
-    if (selector === "tab") {
-      target = { scope: "tab", id: explicitId };
-    } else if (selector === "space") {
-      if (!sharedSpaces.has(explicitId)) throw new Error("설정에서 공유를 켠 스페이스만 --space로 지정할 수 있습니다");
-      target = { scope: "space", id: explicitId };
-    } else {
+    let location;
+    if (selector) location = { [selector]: explicitId };
+    else {
       const terminal = process.env.HC_TERMINAL_ID;
-      if (!terminal) throw new Error("Herdr 에이전트 터미널에서 실행하거나 --tab 또는 --space를 지정하세요");
+      if (!terminal) throw new Error(`Herdr 에이전트 터미널에서 실행하거나 범위를 지정하세요: ${usage}`);
       const state = execFileSync("herdr-app", ["ls"], { encoding: "utf8", timeout: 5000 });
-      target = targetFor(sharedSpaces, locationForTerminal(JSON.parse(state), terminal));
+      location = locationForTerminal(JSON.parse(state), terminal);
     }
-    const files = paths(home, target);
-    const destination = { [target.scope]: target.id };
+    const legacyTarget = selector ? { scope: selector, id: explicitId } : targetFor(sharedSpaces, location);
+    const destination = { [legacyTarget.scope]: legacyTarget.id };
     if (action === "show") {
-      const raw = await readOptional(files.snapshot);
-      const snapshot = raw === null ? null : parseSnapshot(raw);
-      const memos = snapshot ? visibleMemos(snapshot, parseMemos(await readOptional(files.memos))) : [];
-      console.log(JSON.stringify({ ...destination, snapshot, memos }, null, 2));
+      const { snapshot, memos } = await readBoard(home, location, legacyTarget, readOptional, true);
+      console.log(JSON.stringify({ ...destination, snapshot, memos: snapshot ? visibleMemos(snapshot, memos) : [] }, null, 2));
     } else {
       const raw = !input || input === "-" ? await readStdin() : await readFile(input, "utf8");
-      const snapshot = parseSnapshot(raw);
-      const temp = join(dirname(files.snapshot), `.${randomUUID()}.tmp`);
-      await mkdir(dirname(temp), { recursive: true, mode: 0o700 });
-      try {
-        await writeFile(temp, raw, { flag: "wx", mode: 0o600 });
-        await rename(temp, files.snapshot);
-      } catch (error) {
-        await unlink(temp).catch(() => {});
-        throw error;
+      const snapshot = parseSnapshot(raw, { partial: true });
+      if (snapshot.version === 3) {
+        const fragments = projectSnapshot(snapshot, location);
+        if (!fragments.size) throw new Error("발행할 범위를 scope 또는 replaceScopes로 지정하세요");
+        const writes = Array.from(fragments, ([scope, fragment]) => {
+          const output = JSON.stringify(fragment);
+          parseSnapshot(output, { partial: true });
+          return [paths(home, { scope, id: location[scope] }).scoped, output];
+        });
+        for (const [path, output] of writes) await writeSnapshot(path, output);
+        console.log(JSON.stringify({ scopes: Object.fromEntries(Array.from(fragments.keys(), (scope) => [scope, location[scope]])),
+          goal: snapshot.goal?.id ?? null }));
+      } else {
+        if (selector === "session" || (selector === "space" && !sharedSpaces.has(explicitId))) {
+          throw new Error("이 범위에 발행하려면 스냅숏 version 3을 사용하세요");
+        }
+        await writeSnapshot(paths(home, legacyTarget).snapshot, raw);
+        console.log(JSON.stringify({ ...destination, goal: snapshot.goal.id }));
       }
-      console.log(JSON.stringify({ ...destination, goal: snapshot.goal.id }));
     }
   }
 } catch (error) {

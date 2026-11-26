@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { changeMemos, locationForTerminal, parseMemos, parseSharedSpaces, parseSnapshot, paths, targetFor, visibleMemos } from "./mods/workboard/model.mjs";
+import { projectSnapshot, readBoard } from "./mods/workboard/scopes.mjs";
 
 const goal = { id: "demo", title: "Ship checkout" };
 const note = { id: "handoff", kind: "next", body: "Check staging" };
@@ -50,4 +51,44 @@ assert.equal(storageFor("term-b").snapshot, "/herdr/data/workboard/spaces/remote
 assert.equal(storageFor("term-c").snapshot, "/herdr/data/workboard/c.snapshot.json");
 assert.equal(storageFor("term-a", parseSharedSpaces(null)).snapshot, "/herdr/data/workboard/a.snapshot.json");
 assert.throws(() => parseSharedSpaces('{"sharedSpaces":"remote/project"}'), /sharedSpaces/);
+
+const publishing = { space: "remote/project", tab: "a", session: "term-a" };
+const scoped = { version: 3, goal, sections: [
+  hero,
+  { id: "release", type: "progress", title: "Release", scope: "space", items: [
+    { type: "step", id: "ci", title: "CI", status: "done" },
+    { type: "step", id: "local-test", title: "Local test", scope: "tab" },
+    { type: "step", id: "session-debug", title: "Debug trace", scope: "session" },
+  ] },
+  { id: "internal", type: "list", title: "Private heading", items: [
+    { type: "text", title: "Shared incident note", scope: "space" },
+  ] },
+] };
+const files = new Map();
+const publishScoped = (snapshot, context = publishing) => {
+  for (const [scope, fragment] of projectSnapshot(parseSnapshot(JSON.stringify(snapshot), { partial: true }), context)) {
+    files.set(paths("/herdr", { scope, id: context[scope] }).scoped, JSON.stringify(fragment));
+  }
+};
+const boardAt = (location) => readBoard("/herdr", location, targetFor(sharing, location), async (path) => files.get(path) ?? null, true);
+const releaseRows = ({ snapshot }) => snapshot?.sections.find((section) => section.id === "release")?.items.map((item) => item.title);
+publishScoped(scoped);
+const sourceBoard = await boardAt(publishing);
+assert.equal(sourceBoard.snapshot.goal.title, goal.title);
+assert.deepEqual(releaseRows(sourceBoard), ["CI", "Local test", "Debug trace"]);
+assert.deepEqual(releaseRows(await boardAt({ ...publishing, session: "term-a2" })), ["CI", "Local test"]);
+const neighboringTab = await boardAt({ ...publishing, tab: "b", session: "term-b" });
+assert.deepEqual(releaseRows(neighboringTab), ["CI"]);
+assert.equal(neighboringTab.snapshot.goal, null);
+assert.equal(neighboringTab.snapshot.sections.find((section) => section.id === "internal").title, "공유 항목");
+assert.equal((await boardAt({ space: "other", tab: "c", session: "term-c" })).snapshot, null);
+const spaceOnly = { space: publishing.space };
+const direct = await boardAt(spaceOnly);
+publishScoped(direct.snapshot, spaceOnly);
+assert.deepEqual(releaseRows(await boardAt(publishing)), ["CI", "Local test", "Debug trace"]);
+publishScoped({ version: 3, goal: null, sections: [], replaceScopes: ["session"] });
+assert.deepEqual(releaseRows(await boardAt(publishing)), ["CI", "Local test"]);
+publishScoped({ ...scoped, sections: [hero] }, { ...publishing, tab: "b", session: "term-b" });
+assert.deepEqual(releaseRows(await boardAt(publishing)), ["CI", "Local test"]);
+assert.throws(() => parseSnapshot(JSON.stringify({ ...scoped, version: 2 })), /version 3/);
 console.log("Workboard component contract passed");
