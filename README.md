@@ -2,13 +2,23 @@
 
 [Herdr](https://herdr.dev) 앱에서 쓰는 레이아웃과 mod 모음. 패키지마다 폴더 하나이고, 그 안은 herdr-app 홈(`~/.config/herdr-app`)과 같은 모양이다.
 
-| 패키지 | 종류 | 무엇 |
-|---|---|---|
-| [agent-dashboard](agent-dashboard/RECIPE.md) | mod | 모든 에이전트를 상태 × 스페이스 매트릭스로. 오른쪽 패널(지금 저장소만)과 하단 상태 줄 요약, 클릭으로 바로 응답 |
-| [kommand](kommand/RECIPE.md) | mod | 탭·에이전트 이동, 앱 명령, mod 기능, 키 동작을 한 목록에서 찾는 명령 팔레트. herdr TUI 플러그인 [herdr-bar](https://github.com/jeffarese/herdr-bar)를 따라 만들었다 |
-| [workboard](workboard/RECIPE.md) | mod + 레이아웃 | 에이전트가 탭별 목표·워크플로·마일스톤·메모·참조를 골라 표시. 접으면 상태 줄에 요약, 커맨드는 클릭해 분할 실행 |
+## Agent Dashboard
 
-![Agent Dashboard](agent-dashboard/preview.png)
+여러 스페이스의 에이전트를 응답 대기·완료·작업 중·유휴 상태별로 확인한다. 카드를 눌러 바로 응답하거나 세션으로 이동할 수 있다. 전체 현황은 탭에서, 현재 저장소 현황은 오른쪽 패널과 상태 줄에서 본다. [설정과 사용법](agent-dashboard/RECIPE.md)
+
+![Agent Dashboard: 스페이스별 에이전트 상태와 응답 대기 카드](agent-dashboard/preview.png)
+
+## Kommand
+
+탭과 에이전트로 이동하거나, Herdr 명령과 mod 기능을 한 팔레트에서 찾아 실행한다. `>`로 시작하면 명령만 검색하며, 등록된 단축키는 검색 결과 옆에 표시된다. [설정과 사용법](kommand/RECIPE.md)
+
+![Kommand: 패널 관련 명령과 단축키 검색 결과](kommand/preview.png)
+
+## Workboard
+
+에이전트가 현재 탭에 발행한 목표, 진행 단계, 메모와 링크를 오른쪽 패널에서 확인한다. 커맨드 카드를 누르면 새 분할 터미널에서 실행되고, 패널을 접으면 하단 상태 줄에 목표와 진행률이 남는다. 동봉 레이아웃을 쓰거나 기존 레이아웃에 두 블록을 추가할 수 있다. [설정과 사용법](workboard/RECIPE.md)
+
+![Workboard: 결제 화면 변경 목표, 진행 단계와 테스트 카드](workboard/preview.png)
 
 ## 설치
 
