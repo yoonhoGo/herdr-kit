@@ -84,12 +84,22 @@ function progress(t, { id, items: steps }, compact = false) {
   return h_flex().gap(9).items_center().child(track.flex_1()).child(label(t, `${done}/${steps.length} 완료`).flex_none());
 }
 
-function textRow(t, item, index) {
+function linkedTitle(t, item, key, goal = false) {
+  const text = paragraph(item.title);
+  const title = goal ? text.font_semibold().text_size(19) : text.font_medium();
+  if (!item.url) return title;
+  return actionStyle(Link.new(`item-link-${key}`).href(item.url).h_flex().min_w(0)
+    .items_center().gap(6).rounded(4), t).tooltip(item.url).accessibility_label(item.title)
+    .child(title.text_color(t.accent))
+    .child(siteIcon("external", t.accent));
+}
+
+function textRow(t, item, key, index) {
   const color = item.status ? tint(t, item.status) : t.muted;
   const marker = index === undefined ? dot(color, 5) : h_flex().size(19).flex_none().items_center().justify_center()
     .rounded(6).bg(wash(color, 0.12)).text_color(color).text_size(10).font_semibold().child(String(index + 1));
   const row = h_flex().min_w(0).items_center().gap(8)
-    .child(paragraph(item.title).flex_1().font_medium());
+    .child(linkedTitle(t, item, key).flex_1());
   if (item.status) row.child(status(t, item.status, true));
   const body = v_flex().min_w(0).flex_1().gap(4).child(row);
   if (item.due) body.child(label(t, `기한 ${item.due}`));
@@ -286,7 +296,7 @@ export default class WorkOverview extends View {
             .child(paragraph(argv).text_color(t.muted).text_size(11))));
       } else if (item.type === "memo") {
         cardBody.child(this.renderMemo(t, entry, item));
-      } else cardBody.child(textRow(t, item, item.type === "step" ? step++ : undefined));
+      } else cardBody.child(textRow(t, item, key, item.type === "step" ? step++ : undefined));
     }
     return cardBody;
   }
@@ -299,7 +309,7 @@ export default class WorkOverview extends View {
         .children(block.scope && block.scope !== "tab" ? [label(t, scopeLabels[block.scope])] : [])
         .child(button(t, "add-work-memo", "메모 추가", (_e, cx) => this.beginMemo(cx, entry))
           .bg(wash(t.accent, 0.1)).child(icon("plus", t.accent))))
-      .child(paragraph(goal.title).font_semibold().text_size(19));
+      .child(linkedTitle(t, goal, "current-goal", true));
     if (goal.description) hero.child(paragraph(goal.description).text_color(t.muted).text_size(12));
     if (goal.status || goal.due) {
       const meta = h_flex().gap(9).items_center();

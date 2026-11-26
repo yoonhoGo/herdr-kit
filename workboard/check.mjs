@@ -53,11 +53,13 @@ assert.equal(storageFor("term-a", parseSharedSpaces(null)).snapshot, "/herdr/dat
 assert.throws(() => parseSharedSpaces('{"sharedSpaces":"remote/project"}'), /sharedSpaces/);
 
 const publishing = { space: "remote/project", tab: "a", session: "term-a" };
-const scoped = { version: 3, goal, sections: [
+const jiraUrl = "https://example.atlassian.net/browse/APP-42";
+const runUrl = "https://github.com/org/app/actions/runs/123";
+const scoped = { version: 3, goal: { ...goal, url: jiraUrl }, sections: [
   hero,
   { id: "release", type: "progress", title: "Release", scope: "space", items: [
-    { type: "step", id: "ci", title: "CI", status: "done" },
-    { type: "step", id: "local-test", title: "Local test", scope: "tab" },
+    { type: "text", id: "ci", title: "CI", status: "blocked", url: runUrl },
+    { type: "step", id: "local-test", title: "Local test", scope: "tab", url: pr.url },
     { type: "step", id: "session-debug", title: "Debug trace", scope: "session" },
   ] },
   { id: "internal", type: "list", title: "Private heading", items: [
@@ -74,11 +76,14 @@ const boardAt = (location) => readBoard("/herdr", location, targetFor(sharing, l
 const releaseRows = ({ snapshot }) => snapshot?.sections.find((section) => section.id === "release")?.items.map((item) => item.title);
 publishScoped(scoped);
 const sourceBoard = await boardAt(publishing);
-assert.equal(sourceBoard.snapshot.goal.title, goal.title);
+assert.deepEqual(sourceBoard.snapshot.goal, scoped.goal);
+assert.deepEqual(sourceBoard.snapshot.sections.find(({ id }) => id === "release").items.map(({ url }) => url),
+  [runUrl, pr.url, undefined]);
 assert.deepEqual(releaseRows(sourceBoard), ["CI", "Local test", "Debug trace"]);
 assert.deepEqual(releaseRows(await boardAt({ ...publishing, session: "term-a2" })), ["CI", "Local test"]);
 const neighboringTab = await boardAt({ ...publishing, tab: "b", session: "term-b" });
 assert.deepEqual(releaseRows(neighboringTab), ["CI"]);
+assert.equal(neighboringTab.snapshot.sections[0].items[0].url, runUrl);
 assert.equal(neighboringTab.snapshot.goal, null);
 assert.equal(neighboringTab.snapshot.sections.find((section) => section.id === "internal").title, "공유 항목");
 assert.equal((await boardAt({ space: "other", tab: "c", session: "term-c" })).snapshot, null);
@@ -91,4 +96,7 @@ assert.deepEqual(releaseRows(await boardAt(publishing)), ["CI", "Local test"]);
 publishScoped({ ...scoped, sections: [hero] }, { ...publishing, tab: "b", session: "term-b" });
 assert.deepEqual(releaseRows(await boardAt(publishing)), ["CI", "Local test"]);
 assert.throws(() => parseSnapshot(JSON.stringify({ ...scoped, version: 2 })), /version 3/);
+assert.throws(() => parseSnapshot(JSON.stringify({ ...scoped, goal: { ...goal, url: "file:///tmp/ticket" } })), /goal\.url.*HTTP/);
+assert.throws(() => parse([hero, { ...progress, items: [{ ...progress.items[0], url: "javascript:alert(1)" }] }]),
+  /items\[0\]\.url.*HTTP/);
 console.log("Workboard component contract passed");

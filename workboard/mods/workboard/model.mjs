@@ -54,6 +54,12 @@ function date(value, path) {
   return value;
 }
 
+function httpUrl(value, path) {
+  const url = text(value, path, 2048);
+  if (!/^https?:\/\/[^\s/?#\\]+[^\s\\]*$/i.test(url)) fail(path, "HTTP(S) 주소가 필요합니다");
+  return url;
+}
+
 function goal(value, path) {
   const item = record(value, path);
   return {
@@ -61,6 +67,7 @@ function goal(value, path) {
     ...(item.description === undefined ? {} : { description: text(item.description, `${path}.description`, 4000, true) }),
     ...(item.due === undefined ? {} : { due: date(item.due, `${path}.due`) }),
     ...(item.status === undefined ? {} : { status: choice(item.status, `${path}.status`, STATES) }),
+    ...(item.url === undefined ? {} : { url: httpUrl(item.url, `${path}.url`) }),
   };
 }
 
@@ -71,9 +78,8 @@ function memo(value, path) {
 
 function reference(value, path) {
   const item = record(value, path);
-  const url = text(item.url, `${path}.url`, 2048);
-  if (!/^https?:\/\/[^\s/?#\\]+[^\s\\]*$/i.test(url)) fail(`${path}.url`, "HTTP(S) 주소가 필요합니다");
-  return { title: text(item.title, `${path}.title`, 160), url, ...(item.kind === undefined ? {} : { kind: text(item.kind, `${path}.kind`, 40) }) };
+  return { title: text(item.title, `${path}.title`, 160), url: httpUrl(item.url, `${path}.url`),
+    ...(item.kind === undefined ? {} : { kind: text(item.kind, `${path}.kind`, 40) }) };
 }
 
 function command(value, path) {
