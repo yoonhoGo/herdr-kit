@@ -1,12 +1,18 @@
 import { Background, PathBuilder, View, div, svg } from "gpui-kit";
 import { Button, Link, h_flex, v_flex, Textarea, TextareaState } from "gpui-base";
 import { appHome, checking, focused, layout, nextCommand, notify, panes, props, readTextFile, run, spaces, theme, window as appWindow, writeTextFile } from "herdr";
-import { MEMO_KINDS, STATES, changeMemos, parseMemos, parseSnapshot, paths, visibleMemos } from "./model.mjs";
+import { MEMO_KINDS, STATES, changeMemos, configPath, parseMemos, parseSharedSpaces, parseSnapshot, paths, targetFor, visibleMemos } from "./model.mjs";
 import { referenceSite } from "./reference.mjs";
 
 const PANEL = "workboard";
 const ICONS = "mods/workspace-chrome/";
-const activeTab = () => spaces().find((space) => space.active)?.tabs.find((tab) => tab.active) ?? null;
+function activeLocation() {
+  const space = spaces().find((space) => space.active);
+  return { space: space?.id, tab: space?.tabs.find((tab) => tab.active)?.id };
+}
+const sameLocation = (a, b) => a?.space === b.space && a?.tab === b.tab;
+const matchesTarget = (location, target) => target && location[target.scope] === target.id;
+const sameTarget = (a, b) => a?.scope === b.scope && a?.id === b.id;
 const stateColors = { planned: "muted", working: "working", blocked: "blocked", done: "done" };
 const sectionIcons = { list: "layers", progress: "git-compare" };
 const noteIcons = { progress: "check", decision: "pin", next: "chevron-right", note: "square-pen" };
@@ -102,8 +108,8 @@ export default class WorkOverview extends View {
       }
     });
     cx.timer.every(1500, (cx) => {
-      // Load a newly selected tab even if the window is covered; only pause polling an existing entry.
-      if (appWindow()?.visible !== false || this.entry?.tab !== activeTab()?.id) this.refresh(cx);
+      // Keep loading newly selected work even if the window is covered.
+      if (appWindow()?.visible !== false || !matchesTarget(activeLocation(), this.entry?.target)) this.refresh(cx);
     });
   }
 
@@ -115,49 +121,55 @@ export default class WorkOverview extends View {
   }
 
   refresh(cx) {
-    const tab = activeTab()?.id;
+    const location = activeLocation();
     const block = panel(layout());
-    if (!tab || !block || (this.role === "panel") !== !block.hidden) return;
-    if (this.request?.tab === tab) return;
-    const request = { tab };
-    this.request = request;
+    if (!location.space || !block || (this.role === "panel") !== !block.hidden) return;
+    if (sameLocation(this.request, location)) return;
+    this.request = location;
     cx.spawn(async (cx) => {
       let next;
+      let target = location.tab ? { scope: "tab", id: location.tab } : { scope: "space", id: location.space };
       try {
-        const files = paths(appHome(), tab);
-        const raw = await readTextFile(files.snapshot);
-        const previous = this.entry?.tab === tab ? this.entry : null;
-        const snapshot = raw === null ? null : raw === previous?.raw ? previous.snapshot : parseSnapshot(raw);
-        const memoRaw = snapshot && this.role === "panel" ? await readTextFile(files.memos) : null;
-        const memos = memoRaw === previous?.memoRaw ? previous.memos : parseMemos(memoRaw);
-        next = { tab, raw, snapshot, memoRaw, memos };
+        const home = appHome();
+        const sharedSpaces = parseSharedSpaces(await readTextFile(configPath(home)));
+        target = targetFor(sharedSpaces, location);
+        if (target) {
+          const files = paths(home, target);
+          const raw = await readTextFile(files.snapshot);
+          const previous = sameTarget(this.entry?.target, target) ? this.entry : null;
+          const snapshot = raw === null ? null : raw === previous?.raw ? previous.snapshot : parseSnapshot(raw);
+          const memoRaw = snapshot && this.role === "panel" ? await readTextFile(files.memos) : null;
+          const memos = memoRaw === previous?.memoRaw ? previous.memos : parseMemos(memoRaw);
+          next = { target, raw, snapshot, memoRaw, memos };
+        }
       } catch (error) {
-        next = { tab, error: String(error.message ?? error) };
+        next = { target, error: String(error.message ?? error) };
       }
-      if (this.request !== request) return;
+      if (this.request !== location) return;
       this.request = null;
-      if (activeTab()?.id !== tab) return;
+      if (!sameLocation(location, activeLocation())) return;
       const last = this.entry;
-      if (last?.tab === tab && last.raw === next.raw && last.memoRaw === next.memoRaw && last.error === next.error) return;
-      this.entry = next;
+      if (!next && !last) return;
+      if (next && sameTarget(last?.target, next.target) && last.raw === next.raw && last.memoRaw === next.memoRaw && last.error === next.error) return;
+      this.entry = next ?? null;
       cx.notify();
     });
   }
 
   current(entry) {
-    return activeTab()?.id === entry.tab && this.entry === entry;
+    return matchesTarget(activeLocation(), entry.target) && this.entry === entry;
   }
 
   beginMemo(cx, entry) {
     if (!this.current(entry)) return;
-    if (this.draft?.tab === entry.tab && this.draft.goal === entry.snapshot.goal.id) {
+    if (sameTarget(this.draft?.target, entry.target) && this.draft.goal === entry.snapshot.goal.id) {
       this.draft.input.focus();
       return;
     }
     this.clearDraft();
     const input = TextareaState.new({ placeholder: "진척, 결정 사항, 다음 할 일…", rows: 3 });
     input.on("change", (_e, cx) => cx.notify());
-    this.draft = { tab: entry.tab, goal: entry.snapshot.goal.id, input };
+    this.draft = { target: entry.target, goal: entry.snapshot.goal.id, input };
     input.focus();
     cx.notify();
   }
@@ -181,7 +193,7 @@ export default class WorkOverview extends View {
     cx.notify();
     cx.spawn(async (cx) => {
       try {
-        await writeTextFile(paths(appHome(), entry.tab).memos, next, entry.memoRaw);
+        await writeTextFile(paths(appHome(), entry.target).memos, next, entry.memoRaw);
         if (action.add && this.draft === draft) this.clearDraft();
       } catch {
         notify({ title: "메모를 저장하지 못했습니다", body: "다른 창에서 메모를 바꿨거나 파일에 쓸 수 없습니다. 다시 시도하세요.", level: "warning" });
@@ -196,7 +208,8 @@ export default class WorkOverview extends View {
   split(entry, command) {
     if (!this.current(entry)) return;
     const focus = focused();
-    const terminals = panes().filter((pane) => pane.tab === entry.tab && pane.terminal);
+    const tab = activeLocation().tab;
+    const terminals = panes().filter((pane) => pane.tab === tab && pane.terminal);
     const target = terminals.find((pane) => pane.pane === focus?.pane) ?? terminals[0];
     if (!target) {
       notify({ title: "이 탭에 분할할 터미널이 없습니다", level: "warning" });
@@ -301,18 +314,21 @@ export default class WorkOverview extends View {
 
   render(cx) {
     const t = theme();
-    const tab = activeTab();
-    const entry = this.entry?.tab === tab?.id ? this.entry : null;
-    if (!checking() && tab && !entry) this.refresh(cx);
+    const location = activeLocation();
+    const tab = location.tab;
+    const entry = matchesTarget(location, this.entry?.target) ? this.entry : null;
+    if (!checking() && location.space && !entry) this.refresh(cx);
     if (this.role === "status") return this.renderStrip(t, tab, entry);
 
     const title = h_flex().flex_none().px(14).h(48).gap(8).items_center().border_b(1).border_color(t.border)
-      .child(tile(t, icon("panel-right", t.accent))).child(div().font_semibold().flex_1().child("Workboard"))
+      .child(tile(t, icon("panel-right", t.accent))).child(h_flex().flex_1().items_center().gap(8)
+        .child(div().font_semibold().child("Workboard"))
+        .children(entry?.target.scope === "space" && !entry.error ? [label(t, "스페이스 공유")] : []))
       .child(button(t, "close-workboard", "접기", () => this.toggle()).child(icon("chevron-right", t.accent)));
     const body = v_flex().gap(10).p(12);
     if (entry?.snapshot) {
       const { goal, sections } = entry.snapshot;
-      const draft = this.draft?.tab === tab.id && this.draft.goal === goal.id ? this.draft : null;
+      const draft = sameTarget(this.draft?.target, entry.target) && this.draft.goal === goal.id ? this.draft : null;
       const agentMemos = new Map();
       const localMemos = [];
       for (const note of visibleMemos(entry.snapshot, entry.memos)) {
@@ -341,10 +357,10 @@ export default class WorkOverview extends View {
       const emblem = icon(loading ? "spinner" : "layers", entry?.error ? t.blocked : t.accent);
       body.child(card(t).p(16)
         .child(tile(t, loading ? emblem.spin(900) : emblem))
-        .child(div().font_semibold().child(entry?.error ? "업무 현황을 읽을 수 없습니다" : !tab ? "선택한 탭이 없습니다" : entry ? "발행된 목표가 없습니다" : "업무 현황을 읽는 중…"))
-        .child(paragraph(entry?.error ?? (entry ? "이 탭의 에이전트에게 현재 업무 발행을 요청하세요." : "")).text_size(12).text_color(t.muted)));
+        .child(div().font_semibold().child(entry?.error ? "업무 현황을 읽을 수 없습니다" : loading ? "업무 현황을 읽는 중…" : entry ? "발행된 목표가 없습니다" : "선택한 탭이 없습니다"))
+        .child(paragraph(entry?.error ?? (entry ? "에이전트에게 현재 업무 발행을 요청하세요." : "")).text_size(12).text_color(t.muted)));
     }
     return v_flex().size_full().min_w(0).text_color(t.foreground).text_size(13)
-      .child(title).child(div().id(`work-scroll-${tab?.id ?? "empty"}`).flex_1().min_h(0).overflow_y_scrollbar().child(body));
+      .child(title).child(div().id(`work-scroll-${entry?.target.id ?? tab ?? "empty"}`).flex_1().min_h(0).overflow_y_scrollbar().child(body));
   }
 }

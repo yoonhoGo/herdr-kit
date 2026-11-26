@@ -144,9 +144,27 @@ export function parseSnapshot(raw) {
   return { version: 2, goal: current, sections };
 }
 
-export function paths(home, tab) {
-  if (typeof tab !== "string" || !/^[A-Za-z0-9][A-Za-z0-9./_-]{0,159}$/.test(tab)) fail("tab", "Herdr 탭 ID가 필요합니다");
-  const base = `${home}/data/workboard/${encodeURIComponent(tab)}`;
+export const configPath = (home) => `${home}/data/workboard/config.json`;
+
+function herdrId(value, path) {
+  if (typeof value !== "string" || !/^[A-Za-z0-9][A-Za-z0-9./_-]{0,159}$/.test(value)) fail(path, "Herdr ID가 필요합니다");
+  return value;
+}
+
+export function parseSharedSpaces(raw) {
+  if (raw === null) return new Set();
+  const { sharedSpaces } = record(JSON.parse(raw), "Workboard config");
+  return new Set(list(sharedSpaces, "sharedSpaces", herdrId, 1000));
+}
+
+export function targetFor(sharedSpaces, { space, tab }) {
+  if (sharedSpaces.has(space)) return { scope: "space", id: space };
+  return tab ? { scope: "tab", id: tab } : null;
+}
+
+export function paths(home, { scope, id }) {
+  const directory = scope === "space" ? "workboard/spaces" : "workboard";
+  const base = `${home}/data/${directory}/${encodeURIComponent(herdrId(id, scope))}`;
   return { snapshot: `${base}.snapshot.json`, memos: `${base}.memos.json` };
 }
 
@@ -183,9 +201,10 @@ export function changeMemos(raw, goalId, action) {
   return next;
 }
 
-export function tabForTerminal(state, terminal) {
-  const matches = (state.spaces ?? []).flatMap((space) => (space.tabs ?? []).filter((tab) =>
-    (tab.terminals ?? []).some((pane) => pane.terminal === terminal)));
-  if (matches.length !== 1) fail("tab", "에이전트 터미널이 속한 탭을 찾지 못했습니다. --tab으로 지정하세요");
-  return matches[0].id;
+export function locationForTerminal(state, terminal) {
+  const matches = (state.spaces ?? []).flatMap((space) => (space.tabs ?? [])
+    .filter((tab) => (tab.terminals ?? []).some((pane) => pane.terminal === terminal))
+    .map((tab) => ({ space: space.id, tab: tab.id })));
+  if (matches.length !== 1) fail("tab", "에이전트 터미널이 속한 탭을 찾지 못했습니다. --tab 또는 --space로 지정하세요");
+  return matches[0];
 }

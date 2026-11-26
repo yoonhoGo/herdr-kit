@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { changeMemos, parseMemos, parseSnapshot, visibleMemos } from "./mods/workboard/model.mjs";
+import { changeMemos, locationForTerminal, parseMemos, parseSharedSpaces, parseSnapshot, paths, targetFor, visibleMemos } from "./mods/workboard/model.mjs";
 
 const goal = { id: "demo", title: "Ship checkout" };
 const note = { id: "handoff", kind: "next", body: "Check staging" };
@@ -39,4 +39,15 @@ assert.throws(() => parse([hero, progress, { ...progress }]), /중복/);
 assert.throws(() => parse([hero, { ...progress, items: [pr] }]), /text 또는 step/);
 assert.throws(() => parse([hero, combined, { ...combined, id: "second", localMemos: false }]), /memos.*중복/);
 assert.throws(() => parse([hero, combined, { ...combined, id: "second", items: [] }]), /localMemos/);
+
+const tab = (id) => ({ id, terminals: [{ terminal: `term-${id}` }] });
+const state = { spaces: [{ id: "remote/project", tabs: [tab("a"), tab("b")] }, { id: "other", tabs: [tab("c")] }] };
+const sharing = parseSharedSpaces('{"sharedSpaces":["remote/project"]}');
+const storageFor = (terminal, config = sharing) =>
+  paths("/herdr", targetFor(config, locationForTerminal(state, terminal)));
+assert.deepEqual(storageFor("term-a"), storageFor("term-b"));
+assert.equal(storageFor("term-b").snapshot, "/herdr/data/workboard/spaces/remote%2Fproject.snapshot.json");
+assert.equal(storageFor("term-c").snapshot, "/herdr/data/workboard/c.snapshot.json");
+assert.equal(storageFor("term-a", parseSharedSpaces(null)).snapshot, "/herdr/data/workboard/a.snapshot.json");
+assert.throws(() => parseSharedSpaces('{"sharedSpaces":"remote/project"}'), /sharedSpaces/);
 console.log("Workboard component contract passed");

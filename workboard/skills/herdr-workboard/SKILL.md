@@ -5,7 +5,7 @@ description: Publish and resume current work in the Herdr Workboard panel. Use w
 
 # Herdr Workboard
 
-Run this from the agent's local Herdr terminal. The publisher uses `HC_TERMINAL_ID` and `herdr-app ls` to target the tab containing the agent, **not** whichever tab happens to be open on screen. From outside that terminal, supply `--tab <Herdr tab ID>` before `show` or `publish`.
+Run this from the agent's local Herdr terminal. The publisher uses `HC_TERMINAL_ID` and `herdr-app ls` to target the agent's own tab, or its space if sharing is enabled for that space. It does **not** target whichever tab is open on screen. From outside the terminal, put `--space <Herdr space ID>` before `show` or `publish` for a shared board, or `--tab <Herdr tab ID>` for a tab-only board.
 
 ```sh
 publisher="${HERDR_APP_HOME:-$HOME/.config/herdr-app}/mods/workboard/publish.mjs"

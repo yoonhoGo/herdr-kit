@@ -3,15 +3,12 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { parseMemos, parseSnapshot, paths, tabForTerminal, visibleMemos } from "./model.mjs";
+import { configPath, locationForTerminal, parseMemos, parseSharedSpaces, parseSnapshot, paths, targetFor, visibleMemos } from "./model.mjs";
 
-const usage = "node publish.mjs [--tab HERDR_TAB_ID] show | publish [JSON_FILE|-]";
+const usage = "node publish.mjs [--tab HERDR_TAB_ID | --space HERDR_SPACE_ID] show | publish [JSON_FILE|-]";
 const args = process.argv.slice(2);
-let tab;
-if (args[0] === "--tab") {
-  args.shift();
-  tab = args.shift();
-}
+const selector = args[0] === "--tab" || args[0] === "--space" ? args.shift().slice(2) : null;
+const explicitId = selector ? args.shift() : null;
 const [action, input, ...extra] = args;
 
 async function readOptional(path) {
@@ -29,18 +26,30 @@ try {
   if (action === "--help" || action === "-h") {
     console.log(usage);
   } else {
-    if (extra.length || (action !== "publish" && !(action === "show" && input === undefined))) throw new Error(usage);
-    if (!tab) {
-      if (!process.env.HC_TERMINAL_ID) throw new Error("Herdr 에이전트 터미널에서 실행하거나 --tab으로 탭 ID를 지정하세요");
-      const state = execFileSync("herdr-app", ["ls"], { encoding: "utf8", timeout: 5000 });
-      tab = tabForTerminal(JSON.parse(state), process.env.HC_TERMINAL_ID);
+    if ((selector && !explicitId) || extra.length || (action !== "publish" && !(action === "show" && input === undefined))) {
+      throw new Error(usage);
     }
-    const files = paths(process.env.HERDR_APP_HOME || join(homedir(), ".config", "herdr-app"), tab);
+    const home = process.env.HERDR_APP_HOME || join(homedir(), ".config", "herdr-app");
+    const sharedSpaces = parseSharedSpaces(await readOptional(configPath(home)));
+    let target;
+    if (selector === "tab") {
+      target = { scope: "tab", id: explicitId };
+    } else if (selector === "space") {
+      if (!sharedSpaces.has(explicitId)) throw new Error("설정에서 공유를 켠 스페이스만 --space로 지정할 수 있습니다");
+      target = { scope: "space", id: explicitId };
+    } else {
+      const terminal = process.env.HC_TERMINAL_ID;
+      if (!terminal) throw new Error("Herdr 에이전트 터미널에서 실행하거나 --tab 또는 --space를 지정하세요");
+      const state = execFileSync("herdr-app", ["ls"], { encoding: "utf8", timeout: 5000 });
+      target = targetFor(sharedSpaces, locationForTerminal(JSON.parse(state), terminal));
+    }
+    const files = paths(home, target);
+    const destination = { [target.scope]: target.id };
     if (action === "show") {
       const raw = await readOptional(files.snapshot);
       const snapshot = raw === null ? null : parseSnapshot(raw);
       const memos = snapshot ? visibleMemos(snapshot, parseMemos(await readOptional(files.memos))) : [];
-      console.log(JSON.stringify({ tab, snapshot, memos }, null, 2));
+      console.log(JSON.stringify({ ...destination, snapshot, memos }, null, 2));
     } else {
       const raw = !input || input === "-" ? await readStdin() : await readFile(input, "utf8");
       const snapshot = parseSnapshot(raw);
@@ -53,7 +62,7 @@ try {
         await unlink(temp).catch(() => {});
         throw error;
       }
-      console.log(JSON.stringify({ tab, goal: snapshot.goal.id }));
+      console.log(JSON.stringify({ ...destination, goal: snapshot.goal.id }));
     }
   }
 } catch (error) {
