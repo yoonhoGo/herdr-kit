@@ -1,14 +1,14 @@
 ---
-name: herdr-work-overview
-description: Publish and resume current work in the Herdr Work Overview panel. Use when asked to show or update the current task, workflow, milestones, handoff memos, project references, or suggested commands in Herdr.
+name: herdr-workboard
+description: Publish and resume current work in the Herdr Workboard panel. Use when asked to show or update the current task, workflow, milestones, handoff memos, project references, or suggested commands in Herdr.
 ---
 
-# Herdr Work Overview
+# Herdr Workboard
 
 Run this from the agent's local Herdr terminal. The publisher uses `HC_TERMINAL_ID` and `herdr-app ls` to target the tab containing the agent, **not** whichever tab happens to be open on screen. From outside that terminal, supply `--tab <Herdr tab ID>` before `show` or `publish`.
 
 ```sh
-publisher="${HERDR_APP_HOME:-$HOME/.config/herdr-app}/mods/work-overview/publish.mjs"
+publisher="${HERDR_APP_HOME:-$HOME/.config/herdr-app}/mods/workboard/publish.mjs"
 node "$publisher" show
 # Send the complete snapshot JSON to: node "$publisher" publish -
 ```

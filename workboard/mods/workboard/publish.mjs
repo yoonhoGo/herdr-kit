@@ -57,6 +57,6 @@ try {
     }
   }
 } catch (error) {
-  console.error(`work-overview: ${error.message}`);
+  console.error(`workboard: ${error.message}`);
   process.exitCode = 1;
 }

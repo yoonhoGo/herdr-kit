@@ -1,8 +1,0 @@
-{
-  "place": "none",
-  "title": "Work Overview",
-  "palette": [
-    { "title": "Work Overview: 업무 패널 여닫기", "command": "work-overview.toggle", "words": "work overview goal workflow 업무 목표 현황 패널" },
-    { "title": "Work Overview: 업무 레이아웃 열기", "command": "layout.switch", "args": { "name": "work-overview" }, "words": "work overview layout 업무 레이아웃" }
-  ]
-}

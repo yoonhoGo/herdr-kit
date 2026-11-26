@@ -58,7 +58,7 @@
               ]
             },
             {
-              "id": "work-overview",
+              "id": "workboard",
               "type": "block",
               "hidden": true,
               "size": { "px": 396 },
@@ -67,7 +67,7 @@
               "background": "background",
               "border": { "width": 1, "color": "border" },
               "radius": 10,
-              "content": { "mod": "work-overview", "props": { "role": "panel" } }
+              "content": { "mod": "workboard", "props": { "role": "panel" } }
             }
           ]
         },
@@ -78,7 +78,7 @@
           "resizable": false,
           "children": [
             { "id": "workspace-status", "type": "block", "content": { "mod": "workspace-status" } },
-            { "id": "work-overview-status", "type": "block", "size": { "px": 360 }, "content": { "mod": "work-overview", "props": { "role": "status" } } }
+            { "id": "workboard-status", "type": "block", "size": { "px": 360 }, "content": { "mod": "workboard", "props": { "role": "status" } } }
           ]
         }
       ]

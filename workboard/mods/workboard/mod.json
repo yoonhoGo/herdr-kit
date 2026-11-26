@@ -1,0 +1,8 @@
+{
+  "place": "none",
+  "title": "Workboard",
+  "palette": [
+    { "title": "Workboard: 업무 패널 여닫기", "command": "workboard.toggle", "words": "work overview goal workflow 업무 목표 현황 패널" },
+    { "title": "Workboard: 업무 레이아웃 열기", "command": "layout.switch", "args": { "name": "workboard" }, "words": "work overview layout 업무 레이아웃" }
+  ]
+}

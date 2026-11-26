@@ -146,7 +146,7 @@ export function parseSnapshot(raw) {
 
 export function paths(home, tab) {
   if (typeof tab !== "string" || !/^[A-Za-z0-9][A-Za-z0-9./_-]{0,159}$/.test(tab)) fail("tab", "Herdr 탭 ID가 필요합니다");
-  const base = `${home}/data/work-overview/${encodeURIComponent(tab)}`;
+  const base = `${home}/data/workboard/${encodeURIComponent(tab)}`;
   return { snapshot: `${base}.snapshot.json`, memos: `${base}.memos.json` };
 }
 

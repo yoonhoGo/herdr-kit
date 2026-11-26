@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { changeMemos, parseMemos, parseSnapshot, visibleMemos } from "./mods/work-overview/model.mjs";
+import { changeMemos, parseMemos, parseSnapshot, visibleMemos } from "./mods/workboard/model.mjs";
 
 const goal = { id: "demo", title: "Ship checkout" };
 const note = { id: "handoff", kind: "next", body: "Check staging" };
@@ -39,4 +39,4 @@ assert.throws(() => parse([hero, progress, { ...progress }]), /중복/);
 assert.throws(() => parse([hero, { ...progress, items: [pr] }]), /text 또는 step/);
 assert.throws(() => parse([hero, combined, { ...combined, id: "second", localMemos: false }]), /memos.*중복/);
 assert.throws(() => parse([hero, combined, { ...combined, id: "second", items: [] }]), /localMemos/);
-console.log("Work Overview component contract passed");
+console.log("Workboard component contract passed");

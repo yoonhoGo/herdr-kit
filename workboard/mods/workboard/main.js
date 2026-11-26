@@ -4,7 +4,7 @@ import { appHome, checking, focused, layout, nextCommand, notify, panes, props, 
 import { MEMO_KINDS, STATES, changeMemos, parseMemos, parseSnapshot, paths, visibleMemos } from "./model.mjs";
 import { referenceSite } from "./reference.mjs";
 
-const PANEL = "work-overview";
+const PANEL = "workboard";
 const ICONS = "mods/workspace-chrome/";
 const activeTab = () => spaces().find((space) => space.active)?.tabs.find((tab) => tab.active) ?? null;
 const stateColors = { planned: "muted", working: "working", blocked: "blocked", done: "done" };
@@ -21,7 +21,7 @@ function panel(node) {
 }
 
 const icon = (name, color) => svg(`${ICONS}${name}.svg`).size(14).flex_none().text_color(color);
-const siteIcon = (name, color) => svg(`mods/work-overview/icons/${name}.svg`).size(15).flex_none().text_color(color);
+const siteIcon = (name, color) => svg(`mods/workboard/icons/${name}.svg`).size(15).flex_none().text_color(color);
 function wash(color, opacity) {
   let hex = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(color)?.[1];
   if (!hex) return "#00000000";
@@ -212,7 +212,7 @@ export default class WorkOverview extends View {
     const summary = snapshot?.sections.find((section) => section.type === "progress" && section.items.length);
     const goal = snapshot?.goal;
     const title = goal?.title ?? (entry?.error ? "업무 현황 읽기 실패" : "업무 현황");
-    const row = actionStyle(Button.new("open-work-overview").h_flex().size_full().min_w(0).px(10).gap(8).items_center(), t)
+    const row = actionStyle(Button.new("open-workboard").h_flex().size_full().min_w(0).px(10).gap(8).items_center(), t)
       .text_size(11).on_click(() => this.toggle()).tooltip(title)
       .accessibility_label(`업무 패널 열기: ${title}`)
       .child(icon("panel-right", t.accent)).child(line(title).font_semibold().flex_1());
@@ -307,8 +307,8 @@ export default class WorkOverview extends View {
     if (this.role === "status") return this.renderStrip(t, tab, entry);
 
     const title = h_flex().flex_none().px(14).h(48).gap(8).items_center().border_b(1).border_color(t.border)
-      .child(tile(t, icon("panel-right", t.accent))).child(div().font_semibold().flex_1().child("업무 현황"))
-      .child(button(t, "close-work-overview", "접기", () => this.toggle()).child(icon("chevron-right", t.accent)));
+      .child(tile(t, icon("panel-right", t.accent))).child(div().font_semibold().flex_1().child("Workboard"))
+      .child(button(t, "close-workboard", "접기", () => this.toggle()).child(icon("chevron-right", t.accent)));
     const body = v_flex().gap(10).p(12);
     if (entry?.snapshot) {
       const { goal, sections } = entry.snapshot;
