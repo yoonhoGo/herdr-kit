@@ -47,7 +47,7 @@
               "id": "panel",
               "type": "column",
               "hidden": true,
-              "size": { "px": 368 },
+              "size": { "weight": 0.526 },
               "min": 280,
               "max": 900,
               "children": [
@@ -61,7 +61,7 @@
               "id": "workboard",
               "type": "block",
               "hidden": true,
-              "size": { "px": 396 },
+              "size": { "weight": 0.566 },
               "min": 280,
               "max": 700,
               "background": "background",

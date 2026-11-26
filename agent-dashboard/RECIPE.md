@@ -42,7 +42,7 @@
 - 레이아웃 블록 예(상태 줄은 기존 상태 블록과 한 줄(row)로 묶는다):
 
   ```json
-  { "id": "agent-dashboard", "type": "block", "hidden": true, "size": { "px": 520 }, "min": 380, "max": 1100,
+  { "id": "agent-dashboard", "type": "block", "hidden": true, "size": { "weight": 0.743 }, "min": 380, "max": 1100,
     "content": { "mod": "agent-dashboard", "props": { "role": "panel" } } }
   { "id": "agent-dashboard-status", "type": "block", "size": { "px": 380 },
     "content": { "mod": "agent-dashboard", "props": { "role": "status" } } }
