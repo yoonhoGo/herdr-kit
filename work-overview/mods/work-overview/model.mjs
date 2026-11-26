@@ -4,10 +4,11 @@ export const STATES = Object.freeze({
 export const MEMO_KINDS = Object.freeze({
   progress: "진척", decision: "결정", next: "다음 할 일", note: "메모",
 });
-export const BLOCKS = Object.freeze({
-  parents: "상위 목표", subgoals: "하위 목표", workflow: "워크플로",
-  milestones: "마일스톤", memos: "메모", references: "참조 링크", commands: "제안 커맨드",
-});
+const legacyBlocks = {
+  parents: ["상위 목표", "text"], subgoals: ["하위 목표", "text"],
+  workflow: ["워크플로", "step"], milestones: ["마일스톤", "text"],
+  memos: ["메모", "memo"], references: ["참조 링크", "link"], commands: ["제안 커맨드", "command"],
+};
 
 const MAX_BYTES = 128 * 1024;
 const own = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
@@ -32,7 +33,7 @@ function id(value, path) {
 }
 
 function unique(items, path, key) {
-  if (new Set(items.map(key)).size !== items.length) fail(path, "ID 또는 블록 종류가 중복됩니다");
+  if (new Set(items.map(key)).size !== items.length) fail(path, "중복된 값이 있습니다");
   return items;
 }
 
@@ -86,22 +87,61 @@ function command(value, path) {
   return { title: text(item.title, `${path}.title`, 160), argv, direction: item.direction ?? "down" };
 }
 
-const parsers = { parents: goal, subgoals: goal, workflow: goal, milestones: goal, memos: memo, references: reference, commands: command };
+const itemParsers = { text: goal, step: goal, memo, link: reference, command };
+const sectionTypes = { goal: true, list: true, progress: true };
+
+function legacySections(blocks) {
+  const sections = unique(list(blocks, "blocks", (value, path) => {
+    const block = record(value, path);
+    const kind = choice(block.type, `${path}.type`, legacyBlocks);
+    const [title, type] = legacyBlocks[kind];
+    const items = list(block.items, `${path}.items`, (item, at) => ({ type, ...itemParsers[type](item, at) }));
+    return { id: kind, title, type: kind === "workflow" ? "progress" : "list",
+      ...(kind === "memos" ? { localMemos: true } : {}), items };
+  }, Object.keys(legacyBlocks).length), "blocks", (section) => section.id);
+  return [{ id: "current-goal", type: "goal" }, ...sections];
+}
+
+function parseSection(value, path) {
+  const input = record(value, path);
+  const type = choice(input.type, `${path}.type`, sectionTypes);
+  const key = id(input.id, `${path}.id`);
+  if (type === "goal") {
+    if (input.items !== undefined || input.localMemos !== undefined) fail(path, "goal은 최상위 목표 데이터를 표시합니다");
+    return { id: key, type, ...(input.title === undefined ? {} : { title: text(input.title, `${path}.title`, 160) }) };
+  }
+  if (input.localMemos !== undefined && (type !== "list" || typeof input.localMemos !== "boolean")) {
+    fail(`${path}.localMemos`, "list에서만 참/거짓을 지정할 수 있습니다");
+  }
+  const title = text(input.title, `${path}.title`, 160);
+  const items = list(input.items, `${path}.items`, (value, at) => {
+    const item = record(value, at);
+    const kind = choice(item.type, `${at}.type`, itemParsers);
+    if (type === "progress" && kind !== "text" && kind !== "step") {
+      fail(`${at}.type`, "progress는 text 또는 step만 받습니다");
+    }
+    return { type: kind, ...itemParsers[kind](item, at) };
+  });
+  return { id: key, title, type, ...(input.localMemos ? { localMemos: true } : {}), items };
+}
+
+function publishedMemos(sections) {
+  return sections.flatMap((section) => section.items?.filter((item) => item.type === "memo") ?? []);
+}
 
 export function parseSnapshot(raw) {
   // Herdr reads at most 1 MiB; keep documents below it even at 4 bytes per character.
   if (raw.length > MAX_BYTES) fail("snapshot", "문서가 너무 큽니다");
   const value = record(JSON.parse(raw), "snapshot");
-  if (value.version !== 1) fail("version", "지원하는 버전은 1입니다");
+  if (value.version !== 1 && value.version !== 2) fail("version", "지원하는 버전은 1 또는 2입니다");
   const current = goal(value.goal, "goal");
   current.id = id(value.goal.id, "goal.id");
-  const blocks = unique(list(value.blocks, "blocks", (block, path) => {
-    record(block, path);
-    const type = choice(block.type, `${path}.type`, BLOCKS);
-    const items = list(block.items, `${path}.items`, parsers[type]);
-    return { type, items: type === "memos" ? unique(items, path, (item) => item.id) : items };
-  }, Object.keys(BLOCKS).length), "blocks", (block) => block.type);
-  return { version: 1, goal: current, blocks };
+  const sections = value.version === 1 ? legacySections(value.blocks)
+    : unique(list(value.sections, "sections", parseSection, 20), "sections", (section) => section.id);
+  if (sections.filter((section) => section.type === "goal").length !== 1) fail("sections", "goal 섹션은 하나만 필요합니다");
+  if (sections.filter((section) => section.localMemos).length > 1) fail("sections", "localMemos는 한 섹션에만 지정할 수 있습니다");
+  unique(publishedMemos(sections), "memos", (item) => item.id);
+  return { version: 2, goal: current, sections };
 }
 
 export function paths(home, tab) {
@@ -123,7 +163,7 @@ export function parseMemos(raw) {
 
 export function visibleMemos(snapshot, memos) {
   const local = memos.find((entry) => entry.goal === snapshot.goal.id);
-  const published = snapshot.blocks.find((block) => block.type === "memos")?.items ?? [];
+  const published = publishedMemos(snapshot.sections);
   return [
     ...published.filter((note) => !local?.hidden.includes(note.id)).map((note) => ({ ...note, source: "agent" })),
     ...(local?.added ?? []).map((note) => ({ ...note, source: "local" })),
