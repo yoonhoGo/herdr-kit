@@ -1,5 +1,5 @@
 import { Background, PathBuilder, View, div, svg } from "gpui-kit";
-import { Button, Link, h_flex, v_flex, Textarea, TextareaState } from "gpui-base";
+import { Button, Link, h_flex, v_flex, Textarea, TextareaState, TextView } from "gpui-base";
 import { appHome, checking, focused, layout, nextCommand, notify, panes, props, readTextFile, run, spaces, theme, window as appWindow, writeTextFile } from "herdr";
 import { MEMO_KINDS, STATES, changeMemos, configPath, parseSharedSpaces, paths, targetFor, visibleMemos } from "./model.mjs";
 import { readBoard } from "./scopes.mjs";
@@ -84,12 +84,45 @@ function progress(t, { id, items: steps }, compact = false) {
   return h_flex().gap(9).items_center().child(track.flex_1()).child(label(t, `${done}/${steps.length} 완료`).flex_none());
 }
 
+const externalLink = (t, key, { url }, title) => actionStyle(Link.new(key).href(url).min_w(0), t)
+  .tooltip(url).accessibility_label(title);
+const htmlEntities = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" };
+const escapeHtml = (value) => value.replace(/[&<>"]/g, (char) => htmlEntities[char]);
+
+function itemDescription(t, value, key) {
+  if (typeof value === "string") return paragraph(value).text_color(t.muted).text_size(12);
+  const html = value.map((part) => typeof part === "string"
+    ? escapeHtml(part).replace(/\n/g, "<br>")
+    : `<a href="${escapeHtml(part.url)}">${escapeHtml(part.text)}</a>`).join("");
+  return TextView.html(`description-${key}`, `<p>${html}</p>`).min_w(0).text_color(t.muted).text_size(12);
+}
+
+function referenceLink(t, item, key) {
+  const link = externalLink(t, key, item, item.title).h_flex().items_center().gap(6).rounded(7);
+  if (item.presentation === "button") {
+    return h_flex().child(link.px(8).py(4).border_1().border_color(t.border)
+      .child(paragraph(item.title).text_size(11).font_medium().text_color(t.accent))
+      .child(siteIcon("external", t.accent)));
+  }
+  const site = referenceSite(item.url);
+  const color = site.icon === "github" ? t.foreground : t.accent;
+  return link.gap(9).px(6).py(5)
+    .child(tile(t, siteIcon(site.icon, color), color))
+    .child(v_flex().flex_1().min_w(0).gap(2)
+      .child(line(item.title).font_medium().text_color(t.foreground))
+      .child(line(item.kind ? `${site.host} · ${item.kind}` : site.host).text_size(11).text_color(t.muted)))
+    .child(siteIcon("external", t.muted));
+}
+
+function appendItemLinks(t, body, item, key) {
+  item.links?.forEach((link, index) => body.child(referenceLink(t, link, `attached-${key}:${index}`)));
+}
+
 function linkedTitle(t, item, key, goal = false) {
   const text = paragraph(item.title);
   const title = goal ? text.font_semibold().text_size(19) : text.font_medium();
   if (!item.url) return title;
-  return actionStyle(Link.new(`item-link-${key}`).href(item.url).h_flex().min_w(0)
-    .items_center().gap(6).rounded(4), t).tooltip(item.url).accessibility_label(item.title)
+  return externalLink(t, `item-link-${key}`, item, item.title).h_flex().items_center().gap(6).rounded(4)
     .child(title.text_color(t.accent))
     .child(siteIcon("external", t.accent));
 }
@@ -103,7 +136,8 @@ function textRow(t, item, key, index) {
   if (item.status) row.child(status(t, item.status, true));
   const body = v_flex().min_w(0).flex_1().gap(4).child(row);
   if (item.due) body.child(label(t, `기한 ${item.due}`));
-  if (item.description) body.child(paragraph(item.description).text_color(t.muted).text_size(12));
+  if (item.description) body.child(itemDescription(t, item.description, key));
+  appendItemLinks(t, body, item, key);
   const bullet = h_flex().w(19).h(19).flex_none().justify_center().items_center().child(marker);
   return h_flex().items_start().gap(8).px(4).py(5).child(bullet).child(body);
 }
@@ -275,15 +309,7 @@ export default class WorkOverview extends View {
       const key = `${block.id}:${i}`;
       if (item.scope && item.scope !== block.scope) cardBody.child(label(t, scopeLabels[item.scope]));
       if (item.type === "link") {
-        const site = referenceSite(item.url);
-        const color = site.icon === "github" ? t.foreground : t.accent;
-        cardBody.child(actionStyle(Link.new(`reference-${key}`).href(item.url).h_flex().items_center()
-          .min_w(0).gap(9).px(6).py(5).rounded(7), t).tooltip(item.url)
-          .child(tile(t, siteIcon(site.icon, color), color))
-          .child(v_flex().flex_1().min_w(0).gap(2)
-            .child(line(item.title).font_medium().text_color(t.foreground))
-            .child(line(item.kind ? `${site.host} · ${item.kind}` : site.host).text_size(11).text_color(t.muted)))
-          .child(siteIcon("external", t.muted)));
+        cardBody.child(referenceLink(t, item, `reference-${key}`));
       } else if (item.type === "command") {
         const argv = item.argv.map((arg) => /^[\w./:@=+-]+$/.test(arg) ? arg : JSON.stringify(arg)).join(" ");
         cardBody.child(actionStyle(Button.new(`run-${key}`).v_flex().items_start().min_w(0).gap(7).p(8).rounded(8)
@@ -310,13 +336,14 @@ export default class WorkOverview extends View {
         .child(button(t, "add-work-memo", "메모 추가", (_e, cx) => this.beginMemo(cx, entry))
           .bg(wash(t.accent, 0.1)).child(icon("plus", t.accent))))
       .child(linkedTitle(t, goal, "current-goal", true));
-    if (goal.description) hero.child(paragraph(goal.description).text_color(t.muted).text_size(12));
+    if (goal.description) hero.child(itemDescription(t, goal.description, "current-goal"));
     if (goal.status || goal.due) {
       const meta = h_flex().gap(9).items_center();
       if (goal.status) meta.child(status(t, goal.status));
       if (goal.due) meta.child(h_flex().gap(5).items_center().child(icon("clock", t.muted)).child(label(t, `기한 ${goal.due}`)));
       hero.child(meta);
     }
+    appendItemLinks(t, hero, goal, "current-goal");
     return hero;
   }
 

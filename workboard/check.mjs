@@ -55,10 +55,15 @@ assert.throws(() => parseSharedSpaces('{"sharedSpaces":"remote/project"}'), /sha
 const publishing = { space: "remote/project", tab: "a", session: "term-a" };
 const jiraUrl = "https://example.atlassian.net/browse/APP-42";
 const runUrl = "https://github.com/org/app/actions/runs/123";
-const scoped = { version: 3, goal: { ...goal, url: jiraUrl }, sections: [
+const rich = {
+  description: ["Compare ", { text: "the PR", url: pr.url }, " with ", { text: "the failed run", url: runUrl }, "."],
+  links: [{ title: "Failure log", url: runUrl, presentation: "card" },
+    { title: "Open pull request", url: pr.url, presentation: "button" }],
+};
+const scoped = { version: 3, goal: { ...goal, url: jiraUrl, ...rich }, sections: [
   hero,
   { id: "release", type: "progress", title: "Release", scope: "space", items: [
-    { type: "text", id: "ci", title: "CI", status: "blocked", url: runUrl },
+    { type: "text", id: "ci", title: "CI", status: "blocked", url: runUrl, ...rich },
     { type: "step", id: "local-test", title: "Local test", scope: "tab", url: pr.url },
     { type: "step", id: "session-debug", title: "Debug trace", scope: "session" },
   ] },
@@ -83,7 +88,10 @@ assert.deepEqual(releaseRows(sourceBoard), ["CI", "Local test", "Debug trace"]);
 assert.deepEqual(releaseRows(await boardAt({ ...publishing, session: "term-a2" })), ["CI", "Local test"]);
 const neighboringTab = await boardAt({ ...publishing, tab: "b", session: "term-b" });
 assert.deepEqual(releaseRows(neighboringTab), ["CI"]);
-assert.equal(neighboringTab.snapshot.sections[0].items[0].url, runUrl);
+const sharedCi = neighboringTab.snapshot.sections.find(({ id }) => id === "release").items[0];
+assert.equal(sharedCi.url, runUrl);
+assert.deepEqual(sharedCi.description, rich.description);
+assert.deepEqual(sharedCi.links, rich.links);
 assert.equal(neighboringTab.snapshot.goal, null);
 assert.equal(neighboringTab.snapshot.sections.find((section) => section.id === "internal").title, "공유 항목");
 assert.equal((await boardAt({ space: "other", tab: "c", session: "term-c" })).snapshot, null);
@@ -99,4 +107,11 @@ assert.throws(() => parseSnapshot(JSON.stringify({ ...scoped, version: 2 })), /v
 assert.throws(() => parseSnapshot(JSON.stringify({ ...scoped, goal: { ...goal, url: "file:///tmp/ticket" } })), /goal\.url.*HTTP/);
 assert.throws(() => parse([hero, { ...progress, items: [{ ...progress.items[0], url: "javascript:alert(1)" }] }]),
   /items\[0\]\.url.*HTTP/);
+const parseDescription = (fields) => parse([hero, { ...progress, items: [{ ...progress.items[0], ...fields }] }]);
+assert.throws(() => parseDescription({ description: ["Open ", { text: "this", url: "file:///tmp/log" }] }),
+  /description\[1\]\.url.*HTTP/);
+assert.throws(() => parseDescription({ links: [{ ...rich.links[0], url: "javascript:alert(1)" }] }),
+  /links\[0\]\.url.*HTTP/);
+assert.throws(() => parseDescription({ links: [{ ...rich.links[0], presentation: "html" }] }),
+  /links\[0\]\.presentation/);
 console.log("Workboard component contract passed");

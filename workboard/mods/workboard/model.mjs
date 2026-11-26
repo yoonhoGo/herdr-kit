@@ -60,14 +60,26 @@ function httpUrl(value, path) {
   return url;
 }
 
+function description(value, path) {
+  if (!Array.isArray(value)) return text(value, path, 4000, true);
+  const parts = list(value, path, (part, at) => {
+    if (typeof part === "string") return part;
+    const link = record(part, at);
+    return { text: text(link.text, `${at}.text`, 160), url: httpUrl(link.url, `${at}.url`) };
+  });
+  text(parts.map((part) => typeof part === "string" ? part : part.text).join(""), path, 4000, true);
+  return parts;
+}
+
 function goal(value, path) {
   const item = record(value, path);
   return {
     title: text(item.title, `${path}.title`, 160),
-    ...(item.description === undefined ? {} : { description: text(item.description, `${path}.description`, 4000, true) }),
+    ...(item.description === undefined ? {} : { description: description(item.description, `${path}.description`) }),
     ...(item.due === undefined ? {} : { due: date(item.due, `${path}.due`) }),
     ...(item.status === undefined ? {} : { status: choice(item.status, `${path}.status`, STATES) }),
     ...(item.url === undefined ? {} : { url: httpUrl(item.url, `${path}.url`) }),
+    ...(item.links === undefined ? {} : { links: list(item.links, `${path}.links`, reference) }),
   };
 }
 
@@ -76,10 +88,12 @@ function memo(value, path) {
   return { id: id(item.id, `${path}.id`), kind: choice(item.kind, `${path}.kind`, MEMO_KINDS), body: text(item.body, `${path}.body`, 4000, true) };
 }
 
+const linkPresentations = { card: true, button: true };
 function reference(value, path) {
   const item = record(value, path);
   return { title: text(item.title, `${path}.title`, 160), url: httpUrl(item.url, `${path}.url`),
-    ...(item.kind === undefined ? {} : { kind: text(item.kind, `${path}.kind`, 40) }) };
+    ...(item.kind === undefined ? {} : { kind: text(item.kind, `${path}.kind`, 40) }),
+    ...(item.presentation === undefined ? {} : { presentation: choice(item.presentation, `${path}.presentation`, linkPresentations) }) };
 }
 
 function command(value, path) {
